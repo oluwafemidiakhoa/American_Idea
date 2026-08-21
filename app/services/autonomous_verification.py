@@ -1,6 +1,7 @@
 from collections import Counter
 from urllib.parse import urlparse
 
+from .atomic_ledger import hydrate_atomic_claims
 from .discovery_store import save_discovery_leads
 from .evidence_verifier import verify_claim_evidence
 from .ledger import get_record, save_verification
@@ -72,11 +73,17 @@ def _matrix(claim: dict) -> dict:
         "blocked_or_failed_count": fetch_states.get("fetch_failed", 0),
         "unverified_lead_count": relations.get("unverified_lead", 0),
         "trust_gate": claim.get("trust_gate"),
+        "aggregate_status": claim.get("aggregate_status", "unresolved"),
+        "atomic_claim_count": len(claim.get("atomic_claims") or []),
     }
 
 
+def _hydrated_record(record_id: str) -> dict | None:
+    return hydrate_atomic_claims(get_record(record_id))
+
+
 def autonomously_verify_claim(*, record_id: str, claim_id: str, discovery_limit: int = 12, fetch_limit: int = 8) -> dict:
-    record = get_record(record_id)
+    record = _hydrated_record(record_id)
     if record is None:
         raise ValueError("Evidence record was not found.")
 
@@ -113,7 +120,7 @@ def autonomously_verify_claim(*, record_id: str, claim_id: str, discovery_limit:
     if new_leads:
         save_discovery_leads(record_id=record_id, claim_id=claim_id, leads=new_leads)
 
-    refreshed = get_record(record_id)
+    refreshed = _hydrated_record(record_id)
     if refreshed is None:
         raise RuntimeError("Evidence record disappeared during verification.")
     refreshed_claim = next((item for item in refreshed.get("claims", []) if item.get("id") == claim_id), None)
@@ -142,15 +149,19 @@ def autonomously_verify_claim(*, record_id: str, claim_id: str, discovery_limit:
     revision_count = save_verification(
         article_url=record.get("article_url") or "",
         claims=[verified_claim],
-        methodology_version="1.5.1",
+        methodology_version="2.0.0",
     )
 
-    updated_record = get_record(record_id)
+    updated_record = _hydrated_record(record_id)
     updated_claim = next(
         (item for item in (updated_record or {}).get("claims", []) if item.get("id") == claim_id),
         dict(verified_claim),
     )
+    # Trust Gate is computed during this verification pass; preserve its transient audit on the response.
     updated_claim["trust_gate"] = verified_claim.get("trust_gate")
+    updated_claim["status"] = verified_claim.get("status", updated_claim.get("status", "unresolved"))
+    updated_claim["status_basis"] = verified_claim.get("status_basis", updated_claim.get("status_basis"))
+    updated_claim["aggregate_status"] = verified_claim.get("aggregate_status", updated_claim.get("aggregate_status", "unresolved"))
 
     return {
         "record_id": record_id,
@@ -169,8 +180,8 @@ def autonomously_verify_claim(*, record_id: str, claim_id: str, discovery_limit:
         "claim": updated_claim,
         "evidence_matrix": _matrix(updated_claim),
         "methodology_note": (
-            "Each evidence provider receives a compact provider-specific query plan derived from stable retrieval anchors and domain terms. "
-            "Story context may help identify anchors, but fetched evidence is still compared only against the exact stored claim. Search "
-            "queries, provider rank, and source reputation never count as evidence and cannot bypass the Trust Gate."
+            "Deep verification loads the record-scoped Atomic Claim Provenance graph before evaluating the parent claim. "
+            "Story context may help discovery, but no supported evidence for one atomic proposition can resolve a different "
+            "unresolved proposition in the same newsroom sentence. Search rank and source reputation never bypass the Trust Gate."
         ),
     }
