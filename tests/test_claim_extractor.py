@@ -43,6 +43,21 @@ class ClaimExtractorTests(unittest.TestCase):
         claims = extract_candidate_claims(text)
         self.assertEqual(claims, [])
 
+    def test_bare_future_year_is_not_a_measurable_quantity(self):
+        text = "The senator is now in the conversation for the 2028 presidential race."
+        claims = extract_candidate_claims(text)
+        self.assertEqual(claims, [])
+
+    def test_filters_photo_caption(self):
+        text = (
+            "Jon Ossoff speaks to members of the media during the opening of a field office in Decatur May 23, 2026. "
+            "(Elijah Nouvelage/Bloomberg via Getty Images)\n\n"
+            "The campaign reported that the clip received over 6 million views on X."
+        )
+        claims = extract_candidate_claims(text)
+        self.assertTrue(any("6 million views" in c["text"] for c in claims))
+        self.assertTrue(all("Getty Images" not in c["text"] for c in claims))
+
 
 if __name__ == "__main__":
     unittest.main()

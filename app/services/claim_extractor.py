@@ -3,9 +3,12 @@ import re
 from dataclasses import dataclass
 
 SENTENCE_SPLIT = re.compile(r"(?<=[.!?])\s+(?=[A-Z\"“‘])")
-NUMBERISH = re.compile(r"(?:\$?\d[\d,.]*%?|\b(?:million|billion|trillion)\b)", re.I)
+MEASURABLE = re.compile(
+    r"(?:\$\s?\d[\d,.]*|\b\d+(?:\.\d+)?%\b|\b\d[\d,.]*\s+(?:people|votes|views|points|days|hours|minutes|dollars|jobs|cases|deaths|miles|percent|million|billion|trillion)\b|\b(?:million|billion|trillion)\b)",
+    re.I,
+)
 ATTRIBUTION = re.compile(
-    r"\b(?:said|says|reported|according to|announced|claimed|found|shows?|rose|fell|increased|decreased|won|lost|indicates?|identified|held|backed|support(?:ed)?)\b",
+    r"\b(?:said|says|reported|according to|announced|claimed|found|shows?|rose|fell|increased|decreased|won|lost|indicates?|identified|held|backed|support(?:ed)?|confirmed|estimated|recorded)\b",
     re.I,
 )
 DATE_OR_TIME = re.compile(
@@ -13,14 +16,19 @@ DATE_OR_TIME = re.compile(
     re.I,
 )
 OPINION_CUES = re.compile(
-    r"\b(?:I think|I believe|should|ought to|best|worst|disgraceful|wonderful|dangerous|important|hope is not lost|values do matter)\b",
+    r"\b(?:I think|I believe|should|ought to|best|worst|disgraceful|wonderful|dangerous|important|hope is not lost|values do matter|gratuitous|unnecessary|disgusting|radical)\b",
     re.I,
 )
 BOILERPLATE = re.compile(
-    r"\b(?:sign up|newsletter|stay up to date|election hub|power rankings|watch|video|click here|read more|advertisement|sponsored|subscribe)\b",
+    r"\b(?:sign up|newsletter|stay up to date|election hub|power rankings|watch|video|click here|read more|advertisement|sponsored|subscribe|download the app|follow us)\b",
+    re.I,
+)
+CAPTION_CUES = re.compile(
+    r"\b(?:Getty Images|Bloomberg via Getty Images|AP Photo|Reuters|Photo by|Image by|file photo|speaks to members of the media|during the opening of|during a press conference)\b",
     re.I,
 )
 ALL_CAPS_RUN = re.compile(r"(?:\b[A-Z][A-Z’'\-]{2,}\b(?:\s+|$)){3,}")
+
 
 @dataclass
 class Candidate:
@@ -43,6 +51,8 @@ def _claim_id(text: str) -> str:
 def _is_noise(sentence: str) -> bool:
     if BOILERPLATE.search(sentence):
         return True
+    if CAPTION_CUES.search(sentence):
+        return True
     if ALL_CAPS_RUN.search(sentence) and len(sentence.split()) < 18:
         return True
     if sentence.count("###") or sentence.startswith(("http://", "https://")):
@@ -58,15 +68,28 @@ def _looks_like_fragment(sentence: str) -> bool:
         return True
     if sentence[0].islower():
         return True
+    if sentence.count('"') % 2 == 1 and sentence.count("“") == sentence.count("”"):
+        return True
     return False
+
+
+def _split_blocks(text: str) -> list[str]:
+    blocks = [b.strip() for b in re.split(r"\n\s*\n+", text) if b.strip()]
+    sentences: list[str] = []
+    for block in blocks:
+        if len(block) < 450:
+            sentences.extend(SENTENCE_SPLIT.split(block))
+        else:
+            sentences.extend(SENTENCE_SPLIT.split(block))
+    return sentences
 
 
 def extract_candidate_claims(text: str, limit: int = 20) -> list[dict]:
     candidates: list[Candidate] = []
 
-    for raw in SENTENCE_SPLIT.split(text):
+    for raw in _split_blocks(text):
         sentence = _normalize(raw)
-        if len(sentence) < 35 or len(sentence) > 450:
+        if len(sentence) < 35 or len(sentence) > 420:
             continue
         if _is_noise(sentence) or _looks_like_fragment(sentence):
             continue
@@ -74,12 +97,12 @@ def extract_candidate_claims(text: str, limit: int = 20) -> list[dict]:
         reasons: list[str] = []
         score = 0.10
 
-        has_number = bool(NUMBERISH.search(sentence))
+        has_measure = bool(MEASURABLE.search(sentence))
         has_attribution = bool(ATTRIBUTION.search(sentence))
         has_date = bool(DATE_OR_TIME.search(sentence))
         has_opinion = bool(OPINION_CUES.search(sentence))
 
-        if has_number:
+        if has_measure:
             reasons.append("contains a measurable quantity")
             score += 0.35
         if has_attribution:
@@ -87,13 +110,17 @@ def extract_candidate_claims(text: str, limit: int = 20) -> list[dict]:
             score += 0.25
         if has_date:
             reasons.append("contains a date or time-bounded assertion")
-            score += 0.15
-        if has_number and has_attribution:
+            score += 0.10
+        if has_measure and has_attribution:
             score += 0.10
         if has_opinion:
             score -= 0.30
 
-        if score >= 0.35:
+        # A bare year such as 2028 should not be treated as a measurable quantity.
+        if not has_measure and has_date and not has_attribution:
+            continue
+
+        if score >= 0.35 and reasons:
             candidates.append(Candidate(sentence, min(max(score, 0.0), 0.95), reasons))
 
     candidates.sort(key=lambda c: c.score, reverse=True)
