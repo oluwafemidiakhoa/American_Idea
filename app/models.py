@@ -2,6 +2,7 @@ from typing import Any, Literal
 from pydantic import BaseModel, Field, HttpUrl
 
 ClaimStatus = Literal["supported", "partially_supported", "contested", "unsupported", "unresolved"]
+AggregateStatus = Literal["supported", "partially_supported", "contested", "unsupported", "unresolved", "mixed"]
 EvidenceRelation = Literal["supports", "contradicts", "contextualizes", "mentions", "unverified_lead"]
 FetchStatus = Literal["verified", "fetch_failed", "not_fetched", "skipped"]
 SnapshotStatus = Literal["fingerprinted_not_persisted", "persisted"]
@@ -30,6 +31,20 @@ class EvidenceItem(BaseModel):
     source_sha256: str | None = None
 
 
+class AtomicClaim(BaseModel):
+    id: str
+    text: str
+    atomic_type: Literal["attribution", "quote_fidelity", "event_fact", "numeric_fact", "causal_claim", "paraphrase", "general_fact"]
+    status: ClaimStatus = "unresolved"
+    evidence_contract: dict[str, Any]
+    source_span: str
+    subject: str | None = None
+    predicate: str | None = None
+    quoted_text: str | None = None
+    parent_claim_id: str | None = None
+    decomposition_reason: str | None = None
+
+
 class Claim(BaseModel):
     id: str
     text: str
@@ -39,6 +54,10 @@ class Claim(BaseModel):
     evidence: list[EvidenceItem] = []
     status_basis: str | None = None
     trust_gate: dict[str, Any] | None = None
+    atomic_claims: list[AtomicClaim] = []
+    atomic_claim_count: int = 0
+    integrity_flags: list[str] = []
+    aggregate_status: AggregateStatus = "unresolved"
 
 
 class AnalysisResponse(BaseModel):
