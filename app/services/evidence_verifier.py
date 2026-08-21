@@ -3,6 +3,7 @@ from copy import deepcopy
 from dataclasses import dataclass
 from urllib.parse import urlparse
 
+from .structured_source_ingestor import ingest_structured_source
 from .trust_gate import enforce_claim_trust
 from .url_ingestor import IngestionError, IngestedArticle, ingest_article_url
 
@@ -149,6 +150,13 @@ def derive_claim_status(claim: dict) -> tuple[str, str]:
     return "unresolved", "Available fetched evidence is not strong or independent enough to change the claim status."
 
 
+def _ingest_evidence_url(url: str, *, timeout_seconds: float) -> IngestedArticle:
+    structured = ingest_structured_source(url, timeout_seconds=timeout_seconds)
+    if structured is not None:
+        return structured
+    return ingest_article_url(url, timeout_seconds=timeout_seconds, max_redirects=4)
+
+
 def verify_claim_evidence(
     claims: list[dict],
     *,
@@ -173,7 +181,7 @@ def verify_claim_evidence(
 
     for _, url in unique_urls[:fetch_budget]:
         try:
-            cache[url] = ingest_article_url(url, timeout_seconds=timeout_seconds, max_redirects=4)
+            cache[url] = _ingest_evidence_url(url, timeout_seconds=timeout_seconds)
         except (IngestionError, ValueError) as exc:
             cache[url] = exc
 
@@ -211,8 +219,8 @@ def verify_claim_evidence(
             item["source_sha256"] = fetched.content_sha256
             item["url"] = fetched.final_url
             item["note"] = (
-                "Fetched and fingerprinted by American Idea. Relation is based on transparent lexical, numeric, "
-                "and negation matching; inspect the source passage before relying on the classification."
+                "Fetched and fingerprinted by American Idea. Structured public-data sources are read from their public APIs when available; "
+                "ordinary web sources use the article fetcher. Relation remains based on transparent lexical, numeric, and negation matching."
             )
             verified_count += 1
 

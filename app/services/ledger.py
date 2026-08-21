@@ -7,7 +7,7 @@ from typing import Any
 try:
     import psycopg
     from psycopg.rows import dict_row
-except ImportError:  # Keeps local/demo mode working until DB dependencies are installed.
+except ImportError:
     psycopg = None
     dict_row = None
 
@@ -108,9 +108,10 @@ def evidence_public_id(claim_id: str, url: str | None, label: str) -> str:
 
 
 def save_story_analysis(*, article: Any, claims: list[dict]) -> str | None:
-    """Persist an ingested story and its current claim/evidence state.
+    """Persist an ingested story and synchronize its active extraction view.
 
-    Returns a stable public record id, or None when persistence is disabled.
+    The content-addressed story snapshot stays stable. Re-analysis replaces only the story-to-claim
+    membership for the current extraction methodology; historical claim rows/revisions remain auditable.
     """
     if not enabled():
         return None
@@ -132,6 +133,10 @@ def save_story_analysis(*, article: Any, claims: list[dict]) -> str | None:
                 (record_id, article.source_name, article.final_url, article.title, article.content_sha256, article.text),
             )
 
+            # A deterministic content snapshot can be re-analyzed by a newer extractor. Keep old
+            # claim rows/revisions for audit history, but do not keep stale claims in the active view.
+            cur.execute("DELETE FROM ledger_story_claim WHERE story_id = %s", (record_id,))
+
             for ordinal, claim in enumerate(claims):
                 _upsert_claim(cur, claim)
                 cur.execute(
@@ -148,7 +153,6 @@ def save_story_analysis(*, article: Any, claims: list[dict]) -> str | None:
 
 
 def save_verification(*, article_url: str, claims: list[dict], methodology_version: str = "0.8.0") -> int:
-    """Persist verification results and append status revisions when a claim changes."""
     if not enabled():
         return 0
 
@@ -159,10 +163,8 @@ def save_verification(*, article_url: str, claims: list[dict], methodology_versi
                 cur.execute("SELECT status FROM ledger_claim WHERE public_id = %s", (claim["id"],))
                 row = cur.fetchone()
                 previous_status = row["status"] if row else None
-
                 _upsert_claim(cur, claim)
                 _upsert_evidence(cur, claim)
-
                 new_status = claim.get("status", "unresolved")
                 if previous_status is not None and previous_status != new_status:
                     cur.execute(
@@ -172,9 +174,7 @@ def save_verification(*, article_url: str, claims: list[dict], methodology_versi
                         ) VALUES (%s, %s, %s, %s, %s)
                         """,
                         (
-                            claim["id"],
-                            previous_status,
-                            new_status,
+                            claim["id"], previous_status, new_status,
                             claim.get("status_basis") or "Automated verification changed the claim status.",
                             methodology_version,
                         ),
@@ -199,12 +199,8 @@ def _upsert_claim(cur, claim: dict) -> None:
             updated_at = now()
         """,
         (
-            claim["id"],
-            claim["text"],
-            claim.get("status", "unresolved"),
-            claim.get("confidence"),
-            json.dumps(claim.get("why_flagged", [])),
-            claim.get("status_basis"),
+            claim["id"], claim["text"], claim.get("status", "unresolved"),
+            claim.get("confidence"), json.dumps(claim.get("why_flagged", [])), claim.get("status_basis"),
         ),
     )
 
@@ -232,17 +228,10 @@ def _upsert_evidence(cur, claim: dict) -> None:
                 updated_at = now()
             """,
             (
-                eid,
-                claim["id"],
-                item.get("kind", "context"),
-                item.get("label") or item.get("url") or "Evidence",
-                item.get("url"),
-                item.get("note"),
-                item.get("relation", "unverified_lead"),
-                item.get("verification_confidence", 0.0),
-                item.get("fetch_status", "not_fetched"),
-                item.get("source_title"),
-                item.get("source_excerpt"),
+                eid, claim["id"], item.get("kind", "context"),
+                item.get("label") or item.get("url") or "Evidence", item.get("url"), item.get("note"),
+                item.get("relation", "unverified_lead"), item.get("verification_confidence", 0.0),
+                item.get("fetch_status", "not_fetched"), item.get("source_title"), item.get("source_excerpt"),
                 item.get("source_sha256"),
             ),
         )
@@ -279,14 +268,9 @@ def get_record(record_id: str) -> dict | None:
             claims = []
             for row in cur.fetchall():
                 claim = {
-                    "id": row["public_id"],
-                    "text": row["canonical_text"],
-                    "status": row["status"],
-                    "confidence": float(row["extraction_confidence"] or 0),
-                    "why_flagged": row["why_flagged"] or [],
-                    "status_basis": row["status_basis"],
-                    "evidence": [],
-                    "revisions": [],
+                    "id": row["public_id"], "text": row["canonical_text"], "status": row["status"],
+                    "confidence": float(row["extraction_confidence"] or 0), "why_flagged": row["why_flagged"] or [],
+                    "status_basis": row["status_basis"], "evidence": [], "revisions": [],
                 }
                 cur.execute(
                     """
@@ -300,7 +284,6 @@ def get_record(record_id: str) -> dict | None:
                     item = dict(item)
                     item["verification_confidence"] = float(item["verification_confidence"] or 0)
                     claim["evidence"].append(item)
-
                 cur.execute(
                     """
                     SELECT previous_status, new_status, reason, methodology_version, changed_at
@@ -321,13 +304,14 @@ def get_record(record_id: str) -> dict | None:
         "updated_at": _iso(story["updated_at"]),
         "claims": claims,
         "factual_claim_count": len(claims),
-        "ledger_persisted": True,
     }
 
 
-def _iso(value: datetime | None) -> str | None:
+def _iso(value: Any) -> str | None:
     if value is None:
         return None
-    if value.tzinfo is None:
-        value = value.replace(tzinfo=timezone.utc)
-    return value.isoformat()
+    if isinstance(value, datetime):
+        if value.tzinfo is None:
+            value = value.replace(tzinfo=timezone.utc)
+        return value.isoformat()
+    return str(value)
