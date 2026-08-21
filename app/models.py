@@ -1,4 +1,4 @@
-from typing import Literal
+from typing import Any, Literal
 from pydantic import BaseModel, Field, HttpUrl
 
 ClaimStatus = Literal["supported", "partially_supported", "contested", "unsupported", "unresolved"]
@@ -75,4 +75,16 @@ class VerifyEvidenceResponse(BaseModel):
     verified_evidence_count: int
     ledger_persisted: bool = False
     ledger_revision_count: int = 0
+    methodology_note: str
+
+
+class CompareCoverageRequest(BaseModel):
+    record_ids: list[str] = Field(min_length=2, max_length=5)
+
+
+class CompareCoverageResponse(BaseModel):
+    records: list[dict[str, Any]]
+    clusters: list[dict[str, Any]]
+    shared_cluster_count: int
+    source_specific_cluster_count: int
     methodology_note: str
