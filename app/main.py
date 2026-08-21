@@ -6,6 +6,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import RedirectResponse
 from fastapi.staticfiles import StaticFiles
 
+from .autonomous_routes import router as autonomous_router
 from .discovery_routes import router as discovery_router
 from .models import (
     AnalyzeRequest,
@@ -23,12 +24,7 @@ from .services.evidence_engine import attach_source_link_evidence
 from .services.evidence_verifier import verify_claim_evidence
 from .services.ledger import enabled as ledger_enabled
 from .services.ledger import get_record, init_ledger, save_story_analysis, save_verification
-from .services.story_timeline import (
-    get_timeline,
-    init_timeline,
-    latest_record_for_url,
-    record_observation,
-)
+from .services.story_timeline import get_timeline, init_timeline, latest_record_for_url, record_observation
 from .services.url_ingestor import IngestionError, ingest_article_url
 
 BASE_DIR = Path(__file__).resolve().parent
@@ -37,10 +33,10 @@ PUBLIC_STORYLENS_URL = "https://oluwafemidiakhoa.github.io/American_Idea/"
 
 app = FastAPI(
     title="American Idea Evidence API",
-    version="1.1.0",
+    version="1.2.0",
     description=(
-        "Evidence-first news analysis with secure URL ingestion, source-linked and independently discovered evidence leads, "
-        "conservative verification, a persistent Claim Ledger, Compare Coverage, and immutable Story Timeline snapshots."
+        "Evidence-first news analysis with secure URL ingestion, independent evidence discovery, "
+        "bounded autonomous verification, a persistent Claim Ledger, Compare Coverage, and Story Timeline."
     ),
 )
 
@@ -58,6 +54,7 @@ app.add_middleware(
 
 app.mount("/static", StaticFiles(directory=STATIC_DIR), name="static")
 app.include_router(discovery_router)
+app.include_router(autonomous_router)
 
 
 @app.on_event("startup")
@@ -80,10 +77,11 @@ def health():
     return {
         "status": "ok",
         "service": "american-idea-evidence",
-        "version": "1.1.0",
+        "version": "1.2.0",
         "ledger_configured": ledger_enabled(),
         "story_timeline": True,
         "evidence_discovery": True,
+        "autonomous_verification": True,
         "discovery_providers": ["federal_register", "gdelt"],
     }
 
@@ -118,7 +116,6 @@ def record_timeline(record_id: str):
 def refresh_record(record_id: str):
     if not ledger_enabled():
         raise HTTPException(status_code=503, detail="Persistent Claim Ledger is required for Story Timeline refresh.")
-
     try:
         seed = get_record(record_id)
     except Exception as exc:
@@ -170,7 +167,6 @@ def refresh_record(record_id: str):
 def compare_coverage(payload: CompareCoverageRequest):
     if not ledger_enabled():
         raise HTTPException(status_code=503, detail="Persistent Claim Ledger is required for saved-record comparison.")
-
     unique_ids = list(dict.fromkeys(record_id.strip() for record_id in payload.record_ids if record_id.strip()))
     if len(unique_ids) < 2:
         raise HTTPException(status_code=422, detail="Provide at least two different saved record IDs.")
@@ -189,7 +185,6 @@ def compare_coverage(payload: CompareCoverageRequest):
 
     if missing:
         raise HTTPException(status_code=404, detail={"message": "One or more saved records were not found.", "record_ids": missing})
-
     try:
         return compare_records(records)
     except ValueError as exc:
@@ -206,9 +201,8 @@ def analyze(payload: AnalyzeRequest):
         claims=claims,
         factual_claim_count=len(claims),
         methodology_note=(
-            "Candidate factual claims are extracted using transparent heuristics. "
-            "Extraction confidence estimates whether a statement appears externally verifiable; "
-            "it is not a truth score. Claims remain unresolved until evidence is attached and evaluated."
+            "Candidate factual claims are extracted using transparent heuristics. Extraction confidence estimates whether "
+            "a statement appears externally verifiable; it is not a truth score."
         ),
     )
 
@@ -220,11 +214,9 @@ def ingest_url(payload: IngestUrlRequest):
     except IngestionError as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc
 
-    claims = extract_candidate_claims(article.text)
-    claims = attach_source_link_evidence(claims, article.blocks, article.final_url)
+    claims = attach_source_link_evidence(extract_candidate_claims(article.text), article.blocks, article.final_url)
     evidence_link_count = sum(len(claim.get("evidence", [])) for claim in claims)
     claims_with_evidence = sum(1 for claim in claims if claim.get("evidence"))
-
     record_id = f"ai_{uuid4().hex[:16]}"
     persisted = False
     if ledger_enabled():
@@ -260,10 +252,8 @@ def ingest_url(payload: IngestUrlRequest):
         evidence_link_count=evidence_link_count,
         claims_with_evidence=claims_with_evidence,
         methodology_note=(
-            "American Idea fetched the public HTML page, extracted readable article text, fingerprinted it with SHA-256, "
-            "identified candidate factual claims, attached source-linked evidence leads, and—when persistence is configured—"
-            "stored the immutable snapshot in the Claim Ledger and Story Timeline. Saved claims can then use Evidence Discovery "
-            "to find independent public-source leads that remain unverified until separately fetched and compared."
+            "American Idea fetched and fingerprinted the article, extracted candidate claims, attached source-linked leads, "
+            "and persisted an immutable record when the Claim Ledger is configured. Saved claims can then discover and autonomously verify a bounded evidence set."
         ),
     )
 
@@ -271,19 +261,13 @@ def ingest_url(payload: IngestUrlRequest):
 @app.post("/api/verify-evidence", response_model=VerifyEvidenceResponse)
 def verify_evidence(payload: VerifyEvidenceRequest):
     claims_input = [claim.model_dump() for claim in payload.claims]
-    claims, fetched_source_count, verified_evidence_count = verify_claim_evidence(
-        claims_input,
-        max_fetches=payload.max_fetches,
-    )
-
+    claims, fetched_source_count, verified_evidence_count = verify_claim_evidence(claims_input, max_fetches=payload.max_fetches)
     persisted = False
     revision_count = 0
     if ledger_enabled():
         try:
             revision_count = save_verification(
-                article_url=str(payload.article_url),
-                claims=claims,
-                methodology_version="1.1.0",
+                article_url=str(payload.article_url), claims=claims, methodology_version="1.2.0"
             )
             persisted = True
         except Exception as exc:
@@ -298,8 +282,7 @@ def verify_evidence(payload: VerifyEvidenceRequest):
         ledger_persisted=persisted,
         ledger_revision_count=revision_count,
         methodology_note=(
-            "American Idea fetched a limited number of source-linked or discovered evidence leads, fingerprinted the retrieved pages, "
-            "selected relevant passages, and classified their relationship to each claim. Status changes remain conservative "
-            "and are persisted as revisions when the Claim Ledger is configured."
+            "American Idea fetched a bounded number of source-linked or discovered leads, fingerprinted retrieved pages, "
+            "selected relevant passages, and classified their relationship to each claim using conservative thresholds."
         ),
     )
