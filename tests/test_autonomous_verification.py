@@ -1,7 +1,7 @@
 import unittest
 from unittest.mock import patch
 
-from app.services.autonomous_verification import _matrix, autonomously_verify_claim
+from app.services.autonomous_verification import _discovery_context, _matrix, autonomously_verify_claim
 
 
 class AutonomousVerificationTests(unittest.TestCase):
@@ -22,6 +22,69 @@ class AutonomousVerificationTests(unittest.TestCase):
         self.assertEqual(matrix["blocked_or_failed_count"], 1)
         self.assertEqual(matrix["unverified_lead_count"], 2)
         self.assertEqual(matrix["strongest_support"], 0.88)
+
+    def test_context_envelope_uses_title_source_and_neighbours(self):
+        record = {
+            "title": "Moderna, Merck breakthrough could usher in wave of cancer vaccines",
+            "source_name": "CNN",
+            "claims": [
+                {"id": "before", "text": "The companies said they saw no new side effects with the addition of the vaccine."},
+                {"id": "target", "text": "What we saw in the mid-stage trial were reactions like a flu or COVID shot, Hoge said."},
+                {"id": "after", "text": "Doctors are evaluating the vaccine with Keytruda in melanoma."},
+            ],
+        }
+        context = _discovery_context(record, "target")
+        joined = " ".join(context["components"])
+        self.assertIn("Moderna", joined)
+        self.assertIn("CNN", joined)
+        self.assertIn("Keytruda", joined)
+        self.assertIn("side effects", joined)
+
+    @patch("app.services.autonomous_verification.save_verification", return_value=0)
+    @patch("app.services.autonomous_verification.verify_claim_evidence")
+    @patch("app.services.autonomous_verification.save_discovery_leads", return_value=1)
+    @patch("app.services.autonomous_verification.discover_evidence_for_claim")
+    @patch("app.services.autonomous_verification.get_record")
+    def test_context_improves_discovery_but_verification_uses_exact_claim(
+        self,
+        get_record,
+        discover,
+        save_leads,
+        verify,
+        save_verification,
+    ):
+        exact = "What we saw in the mid-stage trial were reactions like a flu or COVID shot, Hoge said."
+        claim = {"id": "target", "text": exact, "status": "unresolved", "confidence": 0.35, "evidence": []}
+        record = {
+            "record_id": "ai_12345678",
+            "title": "Moderna, Merck breakthrough could usher in wave of cancer vaccines",
+            "source_name": "CNN",
+            "article_url": "https://publisher.example/story",
+            "claims": [
+                {"id": "before", "text": "The companies said they saw no new side effects with the vaccine.", "evidence": []},
+                claim,
+                {"id": "after", "text": "The melanoma vaccine is being studied with Keytruda.", "evidence": []},
+            ],
+        }
+        refreshed_claim = {**claim, "evidence": [{"kind": "primary", "label": "trial", "url": "https://clinicaltrials.gov/study/NCT1", "fetch_status": "not_fetched", "relation": "unverified_lead", "verification_confidence": 0}]}
+        refreshed = {**record, "claims": [record["claims"][0], refreshed_claim, record["claims"][2]]}
+        get_record.side_effect = [record, refreshed, refreshed]
+        discover.return_value = {
+            "domain_profile": "life_science",
+            "queries": ["Hoge Moderna Merck melanoma vaccine"],
+            "leads": [{"kind": "primary", "title": "trial", "url": "https://clinicaltrials.gov/study/NCT1"}],
+        }
+        verify.return_value = ([refreshed_claim], 1, 1)
+
+        result = autonomously_verify_claim(record_id="ai_12345678", claim_id="target")
+
+        discovery_text = discover.call_args.args[0]
+        self.assertIn(exact, discovery_text)
+        self.assertIn("Moderna", discovery_text)
+        self.assertIn("Keytruda", discovery_text)
+        verification_claim = verify.call_args.args[0][0]
+        self.assertEqual(verification_claim["text"], exact)
+        self.assertTrue(result["discovery_context"])
 
     @patch("app.services.autonomous_verification.save_verification", return_value=0)
     @patch("app.services.autonomous_verification.verify_claim_evidence")

@@ -17,6 +17,37 @@ def _lead_identity(item: dict) -> tuple[str, str]:
     return (str(item.get("url") or "").strip(), str(item.get("label") or "").strip())
 
 
+def _discovery_context(record: dict, claim_id: str) -> dict:
+    """Build a small, inspectable context envelope for search only.
+
+    The exact claim is never changed. Title/source/neighbouring claims may help locate evidence,
+    but fetched passages are still verified only against the exact claim text.
+    """
+    claims = record.get("claims", [])
+    index = next((i for i, item in enumerate(claims) if item.get("id") == claim_id), None)
+    parts: list[str] = []
+
+    title = str(record.get("title") or "").strip()
+    if title:
+        parts.append(f"Story title: {title[:220]}")
+    source_name = str(record.get("source_name") or "").strip()
+    if source_name:
+        parts.append(f"Story source: {source_name[:80]}")
+
+    if index is not None:
+        for neighbour_index in (index - 1, index + 1):
+            if 0 <= neighbour_index < len(claims):
+                text = str(claims[neighbour_index].get("text") or "").strip()
+                if text:
+                    parts.append(f"Nearby claim: {text[:260]}")
+
+    context_text = " ".join(parts)
+    return {
+        "text": context_text,
+        "components": parts,
+    }
+
+
 def _matrix(claim: dict) -> dict:
     evidence = claim.get("evidence", [])
     relations = Counter(str(item.get("relation") or "unverified_lead") for item in evidence)
@@ -55,6 +86,12 @@ def autonomously_verify_claim(*, record_id: str, claim_id: str, discovery_limit:
     if claim is None:
         raise ValueError("Claim was not found in this evidence record.")
 
+    exact_claim_text = str(claim.get("text") or "").strip()
+    context = _discovery_context(record, claim_id)
+    discovery_text = exact_claim_text
+    if context["text"]:
+        discovery_text = f"{exact_claim_text} {context['text']}"
+
     existing_evidence = list(claim.get("evidence", []))
     existing_urls = {str(item.get("url") or "").strip() for item in existing_evidence if item.get("url")}
     failed_urls = {
@@ -64,7 +101,7 @@ def autonomously_verify_claim(*, record_id: str, claim_id: str, discovery_limit:
     }
 
     discovery = discover_evidence_for_claim(
-        claim.get("text", ""),
+        discovery_text,
         article_url=record.get("article_url"),
         max_results=discovery_limit,
     )
@@ -84,7 +121,9 @@ def autonomously_verify_claim(*, record_id: str, claim_id: str, discovery_limit:
     if refreshed_claim is None:
         raise RuntimeError("Claim disappeared during verification.")
 
+    # Verification always uses the stored exact claim, never the context-assisted search text.
     verification_claim = dict(refreshed_claim)
+    verification_claim["text"] = exact_claim_text
     verification_claim["evidence"] = [
         dict(item) for item in refreshed_claim.get("evidence", [])
         if item.get("fetch_status") != "fetch_failed"
@@ -104,7 +143,7 @@ def autonomously_verify_claim(*, record_id: str, claim_id: str, discovery_limit:
     revision_count = save_verification(
         article_url=record.get("article_url") or "",
         claims=[verified_claim],
-        methodology_version="1.3.0",
+        methodology_version="1.3.2",
     )
 
     updated_record = get_record(record_id)
@@ -119,6 +158,7 @@ def autonomously_verify_claim(*, record_id: str, claim_id: str, discovery_limit:
         "claim_id": claim_id,
         "domain_profile": discovery.get("domain_profile", "general"),
         "queries": discovery.get("queries", []),
+        "discovery_context": context["components"],
         "new_discovered_lead_count": len(new_leads),
         "fetched_source_count": fetched_source_count,
         "verified_evidence_count": verified_evidence_count,
@@ -126,8 +166,8 @@ def autonomously_verify_claim(*, record_id: str, claim_id: str, discovery_limit:
         "claim": updated_claim,
         "evidence_matrix": _matrix(updated_claim),
         "methodology_note": (
-            "Autonomous verification uses domain-aware discovery plus broad fallback discovery, excludes previously failed URLs "
-            "from the new fetch budget, fingerprints fetched pages, applies conservative relation thresholds, and finally passes "
-            "every proposed public status through the auditable Trust Gate."
+            "Autonomous verification may use the saved story title, source, and neighbouring claims only to improve evidence discovery. "
+            "Those context fields never change the claim and never count as evidence. Fetched pages are fingerprinted and compared only "
+            "against the exact stored claim before the Trust Gate can publish any resolved status."
         ),
     }
