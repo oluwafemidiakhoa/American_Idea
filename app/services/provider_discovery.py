@@ -12,8 +12,8 @@ from .source_intelligence import source_profile_for_claim
 
 TOKEN_RE = re.compile(r"[A-Za-z0-9][A-Za-z0-9'’.-]*")
 STOP = {
-    "the", "and", "that", "with", "from", "this", "they", "their", "said", "more", "than", "large",
-    "study", "trial", "patients", "patient", "results", "story", "source", "claim",
+    "the", "and", "that", "with", "from", "this", "they", "their", "said", "says", "more", "than", "large",
+    "study", "trial", "patients", "patient", "results", "story", "source", "claim", "time", "appearing", "take",
 }
 
 
@@ -25,15 +25,28 @@ def _tokens(text: str) -> set[str]:
     }
 
 
-def _relevance(lead, reference_text: str) -> float:
-    reference = _tokens(reference_text)
+def _relevance(lead, claim_text: str) -> float:
+    """Score only returned-source metadata against the exact claim.
+
+    The discovery query is intentionally excluded: including it lets an irrelevant result
+    inherit relevance from the words used to search for it.
+    """
+    reference = _tokens(claim_text)
     if not reference:
         return 0.0
-    candidate = _tokens(" ".join(filter(None, [lead.title, lead.source_name or "", lead.query or ""])))
+    candidate = _tokens(" ".join(filter(None, [lead.title, lead.source_name or ""])))
     if not candidate:
         return 0.0
     shared = reference & candidate
     return len(shared) / max(1, min(len(reference), 10))
+
+
+def _minimum_relevance(provider: str) -> float:
+    if provider in {"clinicaltrials_gov", "pubmed", "federal_register"}:
+        return 0.18
+    if provider == "official_domain":
+        return 0.12
+    return 0.10
 
 
 def discover_with_provider_plans(
@@ -44,8 +57,10 @@ def discover_with_provider_plans(
     max_results: int = 12,
 ) -> dict:
     anchors = retrieval_anchors or []
-    reference_text = claim_text + " " + " ".join(anchors)
-    profile = source_profile_for_claim(reference_text)
+
+    # Routing is determined only by the exact stored claim. Context-derived anchors may
+    # improve search queries, but they must never switch the provider family.
+    profile = source_profile_for_claim(claim_text)
     plans = build_provider_query_plan(
         claim_text,
         profile_name=profile.name,
@@ -60,12 +75,12 @@ def discover_with_provider_plans(
     def add(items):
         accepted = 0
         for lead in items:
-            relevance = _relevance(lead, reference_text)
-            if lead.provider in {"clinicaltrials_gov", "pubmed", "federal_register"} and relevance < 0.18:
+            relevance = _relevance(lead, claim_text)
+            if relevance < _minimum_relevance(lead.provider):
                 continue
             if lead.url and lead.url not in seen_urls:
                 seen_urls.add(lead.url)
-                lead.note = ((lead.note or "") + f" Relevance score: {relevance:.2f}.").strip()
+                lead.note = ((lead.note or "") + f" Claim relevance score: {relevance:.2f}.").strip()
                 leads.append(lead)
                 accepted += 1
         return accepted
@@ -92,9 +107,10 @@ def discover_with_provider_plans(
             accepted_count += add(items)
             if len(leads) >= max_results * 2:
                 break
+        status = "results" if accepted_count else ("filtered_irrelevant" if count else "no_results")
         diagnostics[provider] = {
             "attempted": True,
-            "status": "results" if count else "no_results",
+            "status": status,
             "result_count": count,
             "accepted_count": accepted_count,
             "queries": attempted_queries,
@@ -120,9 +136,13 @@ def discover_with_provider_plans(
                     break
             if len(leads) >= max_results * 2:
                 break
+    official_status = (
+        "results" if official_accepted
+        else ("filtered_irrelevant" if official_count else ("no_results" if attempted_official else "not_routed"))
+    )
     diagnostics["official_domain"] = {
         "attempted": attempted_official,
-        "status": "results" if official_count else ("no_results" if attempted_official else "not_routed"),
+        "status": official_status,
         "result_count": official_count,
         "accepted_count": official_accepted,
         "queries": attempted_pairs,
@@ -151,6 +171,7 @@ def discover_with_provider_plans(
         "leads": [lead.to_dict() for lead in leads],
         "lead_count": len(leads),
         "methodology_note": (
-            "Each provider receives a compact query plan. Structured/database results are relevance-filtered before persistence, and search context never counts as evidence."
+            "Provider routing and relevance acceptance are based on the exact stored claim. Context-derived anchors may improve search queries, "
+            "but cannot switch provider families or increase a returned source's relevance score."
         ),
     }
