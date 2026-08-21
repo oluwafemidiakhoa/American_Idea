@@ -1,7 +1,7 @@
 import hashlib
 import ipaddress
 import socket
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from urllib.parse import urljoin, urlparse
 
 import httpx
@@ -13,6 +13,18 @@ class IngestionError(ValueError):
 
 
 @dataclass
+class ArticleLink:
+    text: str
+    url: str
+
+
+@dataclass
+class ArticleBlock:
+    text: str
+    links: list[ArticleLink] = field(default_factory=list)
+
+
+@dataclass
 class IngestedArticle:
     requested_url: str
     final_url: str
@@ -21,6 +33,7 @@ class IngestedArticle:
     text: str
     content_sha256: str
     content_type: str
+    blocks: list[ArticleBlock]
 
 
 def _is_public_ip(value: str) -> bool:
@@ -57,7 +70,11 @@ def validate_public_http_url(url: str) -> None:
         pass
 
     try:
-        answers = socket.getaddrinfo(hostname, parsed.port or (443 if parsed.scheme == "https" else 80), type=socket.SOCK_STREAM)
+        answers = socket.getaddrinfo(
+            hostname,
+            parsed.port or (443 if parsed.scheme == "https" else 80),
+            type=socket.SOCK_STREAM,
+        )
     except socket.gaierror as exc:
         raise IngestionError("The hostname could not be resolved.") from exc
 
@@ -66,7 +83,7 @@ def validate_public_http_url(url: str) -> None:
         raise IngestionError("The hostname resolves to a private or restricted network address.")
 
 
-def _extract_article_text(html: str) -> tuple[str | None, str | None, str]:
+def _extract_article(html: str, base_url: str) -> tuple[str | None, str | None, str, list[ArticleBlock]]:
     soup = BeautifulSoup(html, "html.parser")
 
     for tag in soup(["script", "style", "noscript", "svg", "form", "nav", "footer", "aside"]):
@@ -87,20 +104,40 @@ def _extract_article_text(html: str) -> tuple[str | None, str | None, str]:
             break
 
     root = soup.find("article") or soup.find("main") or soup.body or soup
-    blocks: list[str] = []
+    blocks: list[ArticleBlock] = []
+
     for element in root.find_all(["p", "h1", "h2", "h3", "li"]):
         text = " ".join(element.get_text(" ", strip=True).split())
-        if len(text) >= 40:
-            blocks.append(text)
+        if len(text) < 40:
+            continue
 
-    text = "\n\n".join(blocks)
+        links: list[ArticleLink] = []
+        seen: set[str] = set()
+        for anchor in element.find_all("a", href=True):
+            href = urljoin(base_url, anchor.get("href", "").strip())
+            parsed = urlparse(href)
+            if parsed.scheme not in {"http", "https"} or not parsed.hostname:
+                continue
+            clean_url = parsed._replace(fragment="").geturl()
+            if clean_url in seen:
+                continue
+            seen.add(clean_url)
+            anchor_text = " ".join(anchor.get_text(" ", strip=True).split())
+            links.append(ArticleLink(text=anchor_text, url=clean_url))
+
+        blocks.append(ArticleBlock(text=text, links=links))
+
+    text = "\n\n".join(block.text for block in blocks)
     if len(text) < 200:
-        text = " ".join(root.get_text(" ", strip=True).split())
+        fallback = " ".join(root.get_text(" ", strip=True).split())
+        if len(fallback) >= 200:
+            text = fallback
+            blocks = [ArticleBlock(text=fallback, links=[])]
 
     if len(text) < 200:
         raise IngestionError("The page did not contain enough readable article text.")
 
-    return title, source_name, text[:100_000]
+    return title, source_name, text[:100_000], blocks
 
 
 def ingest_article_url(url: str, *, timeout_seconds: float = 12.0, max_redirects: int = 5) -> IngestedArticle:
@@ -108,7 +145,7 @@ def ingest_article_url(url: str, *, timeout_seconds: float = 12.0, max_redirects
     validate_public_http_url(requested_url)
 
     headers = {
-        "User-Agent": "AmericanIdeaEvidence/0.4 (+https://oluwafemidiakhoa.github.io/American_Idea/)",
+        "User-Agent": "AmericanIdeaEvidence/0.6 (+https://oluwafemidiakhoa.github.io/American_Idea/)",
         "Accept": "text/html,application/xhtml+xml;q=0.9,*/*;q=0.1",
     }
 
@@ -138,16 +175,18 @@ def ingest_article_url(url: str, *, timeout_seconds: float = 12.0, max_redirects
             if len(response.content) > 5_000_000:
                 raise IngestionError("The page is larger than the ingestion limit.")
 
-            title, source_name, text = _extract_article_text(response.text)
+            final_url = str(response.url)
+            title, source_name, text, blocks = _extract_article(response.text, final_url)
             digest = hashlib.sha256(text.encode("utf-8")).hexdigest()
             return IngestedArticle(
                 requested_url=requested_url,
-                final_url=str(response.url),
+                final_url=final_url,
                 title=title,
                 source_name=source_name,
                 text=text,
                 content_sha256=digest,
                 content_type=content_type,
+                blocks=blocks,
             )
 
     raise IngestionError("The article redirected too many times.")
