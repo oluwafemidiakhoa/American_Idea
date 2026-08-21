@@ -9,6 +9,10 @@ class SourceIntelligenceTests(unittest.TestCase):
         self.assertEqual(classify_claim_domain("A city council member announced a new downtown proposal."), "general")
         profile = source_profile_for_claim("A city council member announced a new downtown proposal.")
         self.assertEqual(profile.name, "general")
+        self.assertFalse(profile.use_federal_register)
+
+    def test_regulatory_general_news_can_route_federal_register(self):
+        profile = source_profile_for_claim("The agency published a final rule in the Federal Register changing federal policy.")
         self.assertTrue(profile.use_federal_register)
 
     def test_life_science_routes_to_trial_and_health_sources(self):
