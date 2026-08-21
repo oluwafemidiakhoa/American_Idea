@@ -50,6 +50,17 @@ def _unique(values: list[str]) -> list[str]:
     return out
 
 
+def _clean_anchor(value: str) -> str:
+    """Remove UI/outlet/context-label noise from multi-word context anchors."""
+    kept: list[str] = []
+    for token in WORD_RE.findall(value or ""):
+        normalized = token.lower().strip(".'’-")
+        if normalized in NOISE_TERMS:
+            continue
+        kept.append(token.strip(".'’-"))
+    return " ".join(kept)
+
+
 def _profile_terms(text: str, profile_name: str) -> list[str]:
     lowered = text.lower()
     return [term for term in PROFILE_TERMS.get(profile_name, ()) if term in lowered]
@@ -73,7 +84,7 @@ def build_provider_query_plan(
     retrieval_anchors: list[str] | None = None,
     max_queries: int = 3,
 ) -> dict[str, list[str]]:
-    anchors = _unique(list(retrieval_anchors or []))
+    anchors = _unique([cleaned for value in (retrieval_anchors or []) if (cleaned := _clean_anchor(value))])
     identifiers = _unique(IDENTIFIER_RE.findall(" ".join([claim_text] + anchors)))
     entities = [
         value for value in anchors
