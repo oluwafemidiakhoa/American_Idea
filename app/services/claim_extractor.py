@@ -27,6 +27,15 @@ CAPTION_CUES = re.compile(
     r"\b(?:Getty Images|Bloomberg via Getty Images|AP Photo|Reuters|Photo by|Image by|file photo|speaks to members of the media|during the opening of|during a press conference)\b",
     re.I,
 )
+MEDIA_FILENAME = re.compile(
+    r"(?:^|\s)[A-Za-z0-9_-]{8,}\.(?:jpe?g|png|gif|webp|mp4|mov)(?:\s|$)",
+    re.I,
+)
+MEDIA_ID_PREFIX = re.compile(r"^\d{12,}_[A-Za-z0-9_-]+\.(?:jpe?g|png|gif|webp)\s*", re.I)
+SOCIAL_CREDIT_PREFIX = re.compile(
+    r"^(?:[A-Z][A-Za-z.'’-]+(?:\s+[A-Z][A-Za-z.'’-]+){0,3})\s*/\s*(?:Facebook|Instagram|X|Twitter|TikTok)\s+",
+    re.I,
+)
 ALL_CAPS_RUN = re.compile(r"(?:\b[A-Z][A-Z’'\-]{2,}\b(?:\s+|$)){3,}")
 
 
@@ -39,6 +48,8 @@ class Candidate:
 
 def _normalize(sentence: str) -> str:
     sentence = re.sub(r"\s+", " ", sentence).strip(" \t\n\r-•")
+    sentence = MEDIA_ID_PREFIX.sub("", sentence).strip()
+    sentence = SOCIAL_CREDIT_PREFIX.sub("", sentence).strip()
     sentence = re.sub(r"^(?:[A-Z][A-Z0-9’'\-]+\s+){3,}", "", sentence).strip()
     return sentence
 
@@ -52,6 +63,8 @@ def _is_noise(sentence: str) -> bool:
     if BOILERPLATE.search(sentence):
         return True
     if CAPTION_CUES.search(sentence):
+        return True
+    if MEDIA_FILENAME.search(sentence):
         return True
     if ALL_CAPS_RUN.search(sentence) and len(sentence.split()) < 18:
         return True
@@ -77,10 +90,7 @@ def _split_blocks(text: str) -> list[str]:
     blocks = [b.strip() for b in re.split(r"\n\s*\n+", text) if b.strip()]
     sentences: list[str] = []
     for block in blocks:
-        if len(block) < 450:
-            sentences.extend(SENTENCE_SPLIT.split(block))
-        else:
-            sentences.extend(SENTENCE_SPLIT.split(block))
+        sentences.extend(SENTENCE_SPLIT.split(block))
     return sentences
 
 
@@ -116,7 +126,6 @@ def extract_candidate_claims(text: str, limit: int = 20) -> list[dict]:
         if has_opinion:
             score -= 0.30
 
-        # A bare year such as 2028 should not be treated as a measurable quantity.
         if not has_measure and has_date and not has_attribution:
             continue
 
