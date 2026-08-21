@@ -16,7 +16,8 @@ DATE_OR_TIME = re.compile(
     re.I,
 )
 OPINION_CUES = re.compile(
-    r"\b(?:I think|I believe|should|ought to|best|worst|disgraceful|wonderful|dangerous|important|hope is not lost|values do matter|gratuitous|unnecessary|disgusting|radical)\b",
+    r"\b(?:I think|I believe|should|ought to|best|worst|disgraceful|wonderful|dangerous|important|big deal|monumental|"
+    r"hope is not lost|values do matter|gratuitous|unnecessary|disgusting|radical|exciting|remarkable|terrible|amazing)\b",
     re.I,
 )
 BOILERPLATE = re.compile(
@@ -37,6 +38,11 @@ SOCIAL_CREDIT_PREFIX = re.compile(
     re.I,
 )
 ALL_CAPS_RUN = re.compile(r"(?:\b[A-Z][A-Z’'\-]{2,}\b(?:\s+|$)){3,}")
+ABBREVIATION = re.compile(
+    r"\b(?:Dr|Mr|Mrs|Ms|Prof|Sen|Rep|Gov|Gen|Lt|Col|St|No|Inc|Corp|Co|vs|U\.S|U\.K|D\.C)\.$",
+    re.I,
+)
+ATTRIBUTION_TAIL = re.compile(r"\b(?:said|says|told|according to)\s+(?:Dr|Mr|Mrs|Ms|Prof|Sen|Rep|Gov|Gen|Lt|Col)\.?$", re.I)
 
 
 @dataclass
@@ -81,16 +87,35 @@ def _looks_like_fragment(sentence: str) -> bool:
         return True
     if sentence[0].islower():
         return True
+    if ATTRIBUTION_TAIL.search(sentence):
+        return True
     if sentence.count('"') % 2 == 1 and sentence.count("“") == sentence.count("”"):
         return True
     return False
+
+
+def _split_block_sentences(block: str) -> list[str]:
+    """Split prose without breaking after common abbreviations such as Dr. or U.S."""
+    pieces: list[str] = []
+    start = 0
+    for match in re.finditer(r"[.!?][\"'”’)]*\s+(?=[A-Z\"“‘])", block):
+        end = match.end()
+        candidate = block[start:match.start() + 1].rstrip()
+        if ABBREVIATION.search(candidate):
+            continue
+        pieces.append(block[start:end].strip())
+        start = end
+    tail = block[start:].strip()
+    if tail:
+        pieces.append(tail)
+    return pieces
 
 
 def _split_blocks(text: str) -> list[str]:
     blocks = [b.strip() for b in re.split(r"\n\s*\n+", text) if b.strip()]
     sentences: list[str] = []
     for block in blocks:
-        sentences.extend(SENTENCE_SPLIT.split(block))
+        sentences.extend(_split_block_sentences(block))
     return sentences
 
 
@@ -124,8 +149,11 @@ def extract_candidate_claims(text: str, limit: int = 20) -> list[dict]:
         if has_measure and has_attribution:
             score += 0.10
         if has_opinion:
-            score -= 0.30
+            score -= 0.35
 
+        # Attribution alone is not enough for subjective commentary.
+        if has_opinion and not has_measure and not has_date:
+            continue
         if not has_measure and has_date and not has_attribution:
             continue
 
