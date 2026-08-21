@@ -25,11 +25,14 @@
           <label for="record-id">Record ID</label>
           <input id="record-id" autocomplete="off" placeholder="ai_..." />
         </div>
-        <div class="record-actions">
+        <div class="record-actions actions">
           <button id="load-record" type="button">Open record</button>
+          <button id="refresh-record" type="button" class="secondary" hidden>Refresh story</button>
+          <a id="timeline-link" class="button-link" href="./timeline.html" hidden>View timeline</a>
         </div>
       </div>
       <p id="record-error" class="error" hidden></p>
+      <p id="refresh-note" class="methodology" hidden></p>
     </section>
 
     <section id="saved-record" class="results" hidden>
