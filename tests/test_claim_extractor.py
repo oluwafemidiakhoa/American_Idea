@@ -43,6 +43,20 @@ class ClaimExtractorTests(unittest.TestCase):
         claims = extract_candidate_claims(text)
         self.assertEqual(claims, [])
 
+    def test_subjective_attributed_quote_is_not_promoted(self):
+        text = '“It is a big deal for the field in general,” said Dr. Jane Example, an oncology researcher.'
+        claims = extract_candidate_claims(text)
+        self.assertEqual(claims, [])
+
+    def test_dr_abbreviation_does_not_create_broken_claim(self):
+        text = (
+            '“It is a big deal for the field in general,” said Dr. Jane Example. '
+            'The companies reported that 1,000 patients were enrolled in the trial.'
+        )
+        claims = extract_candidate_claims(text)
+        self.assertTrue(all(not c["text"].endswith("said Dr.") for c in claims))
+        self.assertTrue(any("1,000 patients" in c["text"] for c in claims))
+
     def test_bare_future_year_is_not_a_measurable_quantity(self):
         text = "The senator is now in the conversation for the 2028 presidential race."
         claims = extract_candidate_claims(text)

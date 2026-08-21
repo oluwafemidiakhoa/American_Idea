@@ -5,6 +5,7 @@ from .discovery_store import save_discovery_leads
 from .evidence_discovery import discover_evidence_for_claim
 from .evidence_verifier import verify_claim_evidence
 from .ledger import get_record, save_verification
+from .retrieval_anchors import build_anchor_query, extract_retrieval_anchors
 
 
 def _host(url: str | None) -> str:
@@ -79,9 +80,13 @@ def autonomously_verify_claim(*, record_id: str, claim_id: str, discovery_limit:
 
     exact_claim_text = str(claim.get("text") or "").strip()
     context = _discovery_context(record, claim_id)
-    discovery_text = exact_claim_text
-    if context["text"]:
-        discovery_text = f"{exact_claim_text} {context['text']}"
+    anchors = extract_retrieval_anchors(exact_claim_text, context["text"])
+    anchor_query = build_anchor_query(exact_claim_text, context["text"])
+
+    # Retrieval starts with stable entities/identifiers when available, then includes the exact claim
+    # and inspectable context. Verification still uses only the exact stored claim.
+    discovery_parts = [part for part in (anchor_query, exact_claim_text, context["text"]) if part]
+    discovery_text = " ".join(discovery_parts)
 
     existing_evidence = list(claim.get("evidence", []))
     existing_urls = {str(item.get("url") or "").strip() for item in existing_evidence if item.get("url")}
@@ -133,7 +138,7 @@ def autonomously_verify_claim(*, record_id: str, claim_id: str, discovery_limit:
     revision_count = save_verification(
         article_url=record.get("article_url") or "",
         claims=[verified_claim],
-        methodology_version="1.4.0",
+        methodology_version="1.5.0",
     )
 
     updated_record = get_record(record_id)
@@ -148,6 +153,7 @@ def autonomously_verify_claim(*, record_id: str, claim_id: str, discovery_limit:
         "claim_id": claim_id,
         "domain_profile": discovery.get("domain_profile", "general"),
         "queries": discovery.get("queries", []),
+        "retrieval_anchors": anchors,
         "discovery_context": context["components"],
         "providers_used": discovery.get("providers_used", []),
         "provider_diagnostics": discovery.get("provider_diagnostics", {}),
@@ -158,8 +164,8 @@ def autonomously_verify_claim(*, record_id: str, claim_id: str, discovery_limit:
         "claim": updated_claim,
         "evidence_matrix": _matrix(updated_claim),
         "methodology_note": (
-            "Autonomous verification may use saved story context only to improve discovery. Direct public-data adapters and broad discovery "
-            "report provider diagnostics, while fetched pages are compared only against the exact stored claim. Context and provider rank "
-            "never count as evidence and cannot bypass the Trust Gate."
+            "Autonomous verification uses stable retrieval anchors plus inspectable saved-story context to find evidence, but fetched pages "
+            "are compared only against the exact stored claim. Retrieval anchors, context, provider rank, and search position never count "
+            "as evidence and cannot bypass the Trust Gate."
         ),
     }
