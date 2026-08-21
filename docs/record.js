@@ -73,6 +73,36 @@ async function refreshRecord() {
   }
 }
 
+async function discoverEvidence(claimId, button) {
+  if (!currentRecordId || !claimId) return;
+  const error = $("record-error");
+  const note = $("refresh-note");
+  error.hidden = true;
+  note.hidden = true;
+  button.disabled = true;
+  button.textContent = "Discovering…";
+  try {
+    const response = await fetch(`${API_BASE}/api/records/${encodeURIComponent(currentRecordId)}/claims/${encodeURIComponent(claimId)}/discover-evidence`, {
+      method: "POST",
+      headers: {"Accept":"application/json"},
+    });
+    const data = await response.json().catch(() => null);
+    if (!response.ok) throw new Error(data?.detail || `Evidence discovery failed (HTTP ${response.status}).`);
+    if (data?.record) render(data.record);
+    const queries = (data?.queries || []).slice(0, 2).join(" · ");
+    note.textContent = data?.discovered_lead_count
+      ? `Discovered ${data.discovered_lead_count} evidence lead${data.discovered_lead_count === 1 ? "" : "s"}. They remain unverified until fetched and compared.${queries ? ` Searches: ${queries}` : ""}`
+      : `No new evidence leads were found.${queries ? ` Searches: ${queries}` : ""}`;
+    note.hidden = false;
+  } catch (e) {
+    error.textContent = e?.message || "Evidence discovery failed.";
+    error.hidden = false;
+  } finally {
+    button.disabled = false;
+    button.textContent = "Discover evidence";
+  }
+}
+
 function render(data) {
   $("saved-record").hidden = false;
   $("saved-title").textContent = data.title || data.record_id;
@@ -94,6 +124,7 @@ function render(data) {
         ${item.verification_confidence ? `<small>Verification confidence: ${Math.round(item.verification_confidence * 100)}%</small>` : ""}
         ${item.source_excerpt ? `<blockquote>${escapeHtml(item.source_excerpt)}</blockquote>` : ""}
         ${item.source_sha256 ? `<small>Source SHA-256: <code>${escapeHtml(item.source_sha256.slice(0,16))}…</code></small>` : ""}
+        ${item.note ? `<small>${escapeHtml(item.note)}</small>` : ""}
       </div>`).join("");
 
     const revisions = (claim.revisions || []).map((revision) => `
@@ -102,6 +133,7 @@ function render(data) {
     return `<article class="claim">
       <div class="claim-top"><div><h3>${escapeHtml(claim.text)}</h3><div>Extraction confidence: <strong>${Math.round((claim.confidence || 0) * 100)}%</strong></div></div><span class="status status-${escapeAttr(claim.status)}">${escapeHtml((claim.status || "unresolved").replaceAll("_", " "))}</span></div>
       ${claim.status_basis ? `<div class="status-basis">${escapeHtml(claim.status_basis)}</div>` : ""}
+      <div class="actions claim-actions"><button class="secondary discover-evidence" type="button" data-claim-id="${escapeAttr(claim.id)}">Discover evidence</button></div>
       ${evidence ? `<div class="evidence-box"><div class="evidence-heading">Evidence</div>${evidence}</div>` : `<div class="no-evidence">No stored evidence for this claim.</div>`}
       ${revisions ? `<div class="revision-box"><div class="evidence-heading">Status history</div><ul class="reasons">${revisions}</ul></div>` : ""}
       <div class="claim-id">${escapeHtml(claim.id)}</div>
@@ -112,6 +144,11 @@ function render(data) {
 $("load-record").addEventListener("click", () => loadRecord($("record-id").value));
 $("refresh-record").addEventListener("click", refreshRecord);
 $("record-id").addEventListener("keydown", (event) => { if (event.key === "Enter") loadRecord($("record-id").value); });
+$("saved-claims").addEventListener("click", (event) => {
+  const button = event.target.closest(".discover-evidence");
+  if (!button) return;
+  discoverEvidence(button.dataset.claimId, button);
+});
 
 const initialId = new URLSearchParams(location.search).get("id");
 if (initialId) {
