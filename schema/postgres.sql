@@ -1,11 +1,11 @@
--- American Idea Evidence: initial PostgreSQL claim-ledger schema
+-- American Idea Evidence: PostgreSQL claim-ledger schema
 CREATE EXTENSION IF NOT EXISTS pgcrypto;
 
 CREATE TABLE source (
   source_id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
   name text NOT NULL,
   canonical_url text,
-  source_type text NOT NULL CHECK (source_type IN ('news','government','court','academic','social','podcast','video','other')),
+  source_type text NOT NULL CHECK (source_type IN ('news','government','court','academic','official_record','dataset','social','podcast','video','other')),
   created_at timestamptz NOT NULL DEFAULT now()
 );
 
@@ -60,6 +60,17 @@ CREATE TABLE claim_evidence (
   PRIMARY KEY (claim_id, evidence_id)
 );
 
+CREATE TABLE evidence_assessment (
+  assessment_id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  evidence_id uuid NOT NULL REFERENCES evidence_item(evidence_id) ON DELETE CASCADE,
+  quality_score numeric(5,4) NOT NULL CHECK (quality_score BETWEEN 0 AND 1),
+  directness numeric(5,4) NOT NULL CHECK (directness BETWEEN 0 AND 1),
+  independence numeric(5,4) NOT NULL CHECK (independence BETWEEN 0 AND 1),
+  review_required boolean NOT NULL DEFAULT true,
+  methodology_version text NOT NULL,
+  assessed_at timestamptz NOT NULL DEFAULT now()
+);
+
 CREATE TABLE claim_revision (
   revision_id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
   claim_id uuid NOT NULL REFERENCES claim(claim_id) ON DELETE CASCADE,
@@ -94,3 +105,4 @@ CREATE TABLE provenance_anchor (
 CREATE INDEX idx_story_source ON story(source_id, published_at DESC);
 CREATE INDEX idx_claim_status ON claim(status, first_observed_at DESC);
 CREATE INDEX idx_evidence_source ON evidence_item(source_id, published_at DESC);
+CREATE INDEX idx_claim_evidence_relation ON claim_evidence(claim_id, relation);
