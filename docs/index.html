@@ -16,7 +16,7 @@
     </a>
     <div class="top-actions">
       <a class="repo-link" href="https://github.com/oluwafemidiakhoa/American_Idea" target="_blank" rel="noreferrer">View source</a>
-      <span class="pill">Public Preview</span>
+      <span class="pill">Live Preview</span>
     </div>
   </header>
 
@@ -28,7 +28,7 @@
     </section>
 
     <section class="notice" aria-label="Preview notice">
-      <strong>Public preview:</strong> this GitHub Pages version runs the first-pass claim extractor in your browser. It does not declare claims true or false and does not upload pasted article text to American Idea. Evidence retrieval and URL ingestion will be connected to the backend in the next layer.
+      <strong>Live preview:</strong> paste a public news URL and StoryLens will fetch the article through the American Idea Evidence API, fingerprint the extracted text, and identify candidate factual claims. It still does not label claims true or false without evidence.
     </section>
 
     <section class="panel analyzer">
@@ -46,16 +46,16 @@
           <input id="source" autocomplete="off" placeholder="e.g., Reuters, Fox News, CNN" />
         </div>
         <div>
-          <label for="url">Article URL <span>reference only in public preview</span></label>
+          <label for="url">Article URL</label>
           <input id="url" type="url" autocomplete="url" placeholder="https://..." />
         </div>
       </div>
 
-      <label for="text">Article text</label>
-      <textarea id="text" rows="12" placeholder="Paste the article or excerpt here. StoryLens will identify candidate factual claims without pretending to know whether they are true."></textarea>
+      <label for="text">Or paste article text</label>
+      <textarea id="text" rows="12" placeholder="Paste an article or excerpt here if you prefer local browser analysis instead of URL ingestion."></textarea>
 
       <div class="actions">
-        <button id="analyze" type="button">Extract claims</button>
+        <button id="analyze" type="button">Analyze story</button>
         <button id="sample" type="button" class="secondary">Load sample</button>
         <button id="clear" type="button" class="ghost">Clear</button>
       </div>
@@ -91,7 +91,7 @@
 
   <footer>
     <span>American Idea Evidence</span>
-    <span>Public preview · Evidence before verdicts.</span>
+    <span>Live preview · Evidence before verdicts.</span>
   </footer>
 
   <script src="./app.js"></script>
