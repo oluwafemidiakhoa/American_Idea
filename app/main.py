@@ -22,6 +22,12 @@ from .services.evidence_engine import attach_source_link_evidence
 from .services.evidence_verifier import verify_claim_evidence
 from .services.ledger import enabled as ledger_enabled
 from .services.ledger import get_record, init_ledger, save_story_analysis, save_verification
+from .services.story_timeline import (
+    get_timeline,
+    init_timeline,
+    latest_record_for_url,
+    record_observation,
+)
 from .services.url_ingestor import IngestionError, ingest_article_url
 
 BASE_DIR = Path(__file__).resolve().parent
@@ -30,10 +36,10 @@ PUBLIC_STORYLENS_URL = "https://oluwafemidiakhoa.github.io/American_Idea/"
 
 app = FastAPI(
     title="American Idea Evidence API",
-    version="0.9.0",
+    version="1.0.0",
     description=(
-        "Transparent claim extraction, secure URL ingestion, conservative linked-source verification, "
-        "a persistent Claim Ledger, public saved records, and cross-record coverage comparison."
+        "Evidence-first news analysis with secure URL ingestion, linked-source verification, "
+        "a persistent Claim Ledger, Compare Coverage, and immutable Story Timeline snapshots."
     ),
 )
 
@@ -57,8 +63,9 @@ def startup() -> None:
     if ledger_enabled():
         try:
             init_ledger()
+            init_timeline()
         except Exception as exc:
-            print(f"American Idea ledger initialization failed: {exc}")
+            print(f"American Idea persistence initialization failed: {exc}")
 
 
 @app.get("/", include_in_schema=False)
@@ -71,8 +78,9 @@ def health():
     return {
         "status": "ok",
         "service": "american-idea-evidence",
-        "version": "0.9.0",
+        "version": "1.0.0",
         "ledger_configured": ledger_enabled(),
+        "story_timeline": True,
     }
 
 
@@ -87,6 +95,71 @@ def record(record_id: str):
     if data is None:
         raise HTTPException(status_code=404, detail="Evidence record was not found.")
     return data
+
+
+@app.get("/api/records/{record_id}/timeline")
+def record_timeline(record_id: str):
+    if not ledger_enabled():
+        raise HTTPException(status_code=503, detail="Persistent Claim Ledger is not configured.")
+    try:
+        data = get_timeline(record_id)
+    except Exception as exc:
+        raise HTTPException(status_code=503, detail="Story Timeline is temporarily unavailable.") from exc
+    if data is None:
+        raise HTTPException(status_code=404, detail="Evidence record was not found.")
+    return data
+
+
+@app.post("/api/records/{record_id}/refresh")
+def refresh_record(record_id: str):
+    if not ledger_enabled():
+        raise HTTPException(status_code=503, detail="Persistent Claim Ledger is required for Story Timeline refresh.")
+
+    try:
+        seed = get_record(record_id)
+    except Exception as exc:
+        raise HTTPException(status_code=503, detail="Persistent Claim Ledger is temporarily unavailable.") from exc
+    if seed is None:
+        raise HTTPException(status_code=404, detail="Evidence record was not found.")
+
+    try:
+        previous = latest_record_for_url(seed["article_url"])
+        article = ingest_article_url(seed["article_url"])
+    except IngestionError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    except Exception as exc:
+        raise HTTPException(status_code=503, detail="Story refresh is temporarily unavailable.") from exc
+
+    claims = extract_candidate_claims(article.text)
+    claims = attach_source_link_evidence(claims, article.blocks, article.final_url)
+    changed = previous is None or previous.get("content_sha256") != article.content_sha256
+
+    try:
+        new_record_id = save_story_analysis(article=article, claims=claims)
+        record_observation(
+            record_id=new_record_id,
+            article_url=article.final_url,
+            content_sha256=article.content_sha256,
+            changed=changed,
+            text=article.text,
+        )
+        timeline = get_timeline(new_record_id or record_id)
+    except Exception as exc:
+        raise HTTPException(status_code=503, detail="Story Timeline persistence is temporarily unavailable.") from exc
+
+    return {
+        "changed": changed,
+        "previous_record_id": previous.get("public_id") if previous else None,
+        "record_id": new_record_id or record_id,
+        "content_sha256": article.content_sha256,
+        "title": article.title,
+        "article_url": article.final_url,
+        "timeline": timeline,
+        "methodology_note": (
+            "Refresh re-fetches the same public URL and compares the extracted article fingerprint with the latest saved snapshot. "
+            "A different fingerprint creates a new immutable record. An unchanged fingerprint records an observation without creating a fake revision."
+        ),
+    }
 
 
 @app.post("/api/compare-coverage", response_model=CompareCoverageResponse)
@@ -145,7 +218,6 @@ def ingest_url(payload: IngestUrlRequest):
 
     claims = extract_candidate_claims(article.text)
     claims = attach_source_link_evidence(claims, article.blocks, article.final_url)
-
     evidence_link_count = sum(len(claim.get("evidence", [])) for claim in claims)
     claims_with_evidence = sum(1 for claim in claims if claim.get("evidence"))
 
@@ -153,10 +225,18 @@ def ingest_url(payload: IngestUrlRequest):
     persisted = False
     if ledger_enabled():
         try:
+            previous = latest_record_for_url(article.final_url)
             stored_id = save_story_analysis(article=article, claims=claims)
             if stored_id:
                 record_id = stored_id
                 persisted = True
+                record_observation(
+                    record_id=stored_id,
+                    article_url=article.final_url,
+                    content_sha256=article.content_sha256,
+                    changed=previous is None or previous.get("content_sha256") != article.content_sha256,
+                    text=article.text,
+                )
         except Exception as exc:
             print(f"American Idea ledger write failed: {exc}")
 
@@ -176,10 +256,9 @@ def ingest_url(payload: IngestUrlRequest):
         evidence_link_count=evidence_link_count,
         claims_with_evidence=claims_with_evidence,
         methodology_note=(
-            "American Idea fetched the public HTML page, extracted readable article text, fingerprinted "
-            "that text with SHA-256, identified candidate factual claims, and attached source-linked "
-            "evidence leads found in the same article passages. When the Claim Ledger is configured, the "
-            "story snapshot, claims, and evidence leads are persisted under a stable public record ID."
+            "American Idea fetched the public HTML page, extracted readable article text, fingerprinted it with SHA-256, "
+            "identified candidate factual claims, attached source-linked evidence leads, and—when persistence is configured—"
+            "stored the immutable snapshot in the Claim Ledger and Story Timeline."
         ),
     )
 
@@ -199,7 +278,7 @@ def verify_evidence(payload: VerifyEvidenceRequest):
             revision_count = save_verification(
                 article_url=str(payload.article_url),
                 claims=claims,
-                methodology_version="0.9.0",
+                methodology_version="1.0.0",
             )
             persisted = True
         except Exception as exc:
@@ -214,10 +293,8 @@ def verify_evidence(payload: VerifyEvidenceRequest):
         ledger_persisted=persisted,
         ledger_revision_count=revision_count,
         methodology_note=(
-            "American Idea fetched a limited number of source-linked evidence leads, fingerprinted the "
-            "retrieved pages, selected relevant passages, and classified their relationship to each claim. "
-            "When the Claim Ledger is configured, verified evidence state and every status transition are "
-            "persisted so the public record can be inspected later. Automated verification remains an aid, "
-            "not a substitute for human review of consequential claims."
+            "American Idea fetched a limited number of source-linked evidence leads, fingerprinted the retrieved pages, "
+            "selected relevant passages, and classified their relationship to each claim. Status changes remain conservative "
+            "and are persisted as revisions when the Claim Ledger is configured."
         ),
     )
