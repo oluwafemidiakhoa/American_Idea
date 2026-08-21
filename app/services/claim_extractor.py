@@ -2,6 +2,8 @@ import hashlib
 import re
 from dataclasses import dataclass
 
+from .atomic_claims import compile_atomic_claims
+
 SENTENCE_SPLIT = re.compile(r"(?<=[.!?])\s+(?=[A-Z\"“‘])")
 MEASURABLE = re.compile(
     r"(?:\$\s?\d[\d,.]*|\b\d+(?:\.\d+)?%\b|\b\d[\d,.]*\s+(?:people|votes|views|points|days|hours|minutes|dollars|jobs|cases|deaths|miles|percent|million|billion|trillion)\b|\b(?:million|billion|trillion)\b)",
@@ -151,7 +153,6 @@ def extract_candidate_claims(text: str, limit: int = 20) -> list[dict]:
         if has_opinion:
             score -= 0.35
 
-        # Attribution alone is not enough for subjective commentary.
         if has_opinion and not has_measure and not has_date:
             continue
         if not has_measure and has_date and not has_attribution:
@@ -169,14 +170,20 @@ def extract_candidate_claims(text: str, limit: int = 20) -> list[dict]:
         if key in seen:
             continue
         seen.add(key)
+        claim_id = _claim_id(candidate.text)
+        compiled = compile_atomic_claims(claim_id, candidate.text)
         unique.append(
             {
-                "id": _claim_id(candidate.text),
+                "id": claim_id,
                 "text": candidate.text,
                 "status": "unresolved",
                 "confidence": round(candidate.score, 2),
                 "why_flagged": candidate.reasons,
                 "evidence": [],
+                "atomic_claims": compiled["atomic_claims"],
+                "atomic_claim_count": compiled["atomic_claim_count"],
+                "integrity_flags": compiled["integrity_flags"],
+                "aggregate_status": compiled["aggregate_status"],
             }
         )
         if len(unique) >= limit:
