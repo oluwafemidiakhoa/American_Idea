@@ -38,6 +38,7 @@ class Claim(BaseModel):
     why_flagged: list[str] = []
     evidence: list[EvidenceItem] = []
     status_basis: str | None = None
+    trust_gate: dict[str, Any] | None = None
 
 
 class AnalysisResponse(BaseModel):
