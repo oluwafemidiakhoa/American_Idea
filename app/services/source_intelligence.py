@@ -22,6 +22,16 @@ PROFILE_PATTERNS: tuple[tuple[str, re.Pattern[str]], ...] = (
         ),
     ),
     (
+        "geopolitics_conflict",
+        re.compile(
+            r"\b(?:iran|iranian|israel|israeli|ukraine|ukrainian|russia|russian|china|chinese|taiwan|gaza|"
+            r"war|ceasefire|hostilities|military|missile|airstrike|strike|invasion|conflict|peace talks|diplomat|"
+            r"diplomatic|foreign minister|supreme leader|strait of hormuz|nato|united nations|sanctions?|"
+            r"troops?|armed forces|defense ministry|foreign policy)\b",
+            re.I,
+        ),
+    ),
+    (
         "finance_business",
         re.compile(
             r"\b(?:earnings|revenue|profit|loss|guidance|shares|stock|securities|merger|acquisition|ipo|"
@@ -32,8 +42,8 @@ PROFILE_PATTERNS: tuple[tuple[str, re.Pattern[str]], ...] = (
     (
         "government_policy",
         re.compile(
-            r"\b(?:president|white house|congress|senate|house of representatives|department|agency|federal|"
-            r"regulation|rule|executive order|administration|secretary|policy|tariff|sanction|budget|government)\b",
+            r"\b(?:white house|congress|senate|house of representatives|department|agency|federal|"
+            r"regulation|rule|executive order|administration|secretary|policy|tariff|budget|government)\b",
             re.I,
         ),
     ),
@@ -70,6 +80,11 @@ BASE_PROFILES = {
         official_domains=("fda.gov", "nih.gov", "cdc.gov"),
         use_clinical_trials=True,
         use_pubmed=True,
+        use_federal_register=False,
+    ),
+    "geopolitics_conflict": SourceProfile(
+        name="geopolitics_conflict",
+        official_domains=("state.gov", "treasury.gov", "defense.gov", "whitehouse.gov", "un.org", "president.ir"),
         use_federal_register=False,
     ),
     "finance_business": SourceProfile(
@@ -119,8 +134,8 @@ ENTITY_DOMAINS = {
 }
 
 FEDERAL_REGISTER_CUES = re.compile(
-    r"\b(?:federal register|final rule|proposed rule|regulation|regulatory|notice|executive order|rulemaking|"
-    r"medicare|medicaid|cms|federal policy|agency rule|tariff|sanction)\b",
+    r"\b(?:federal register|final rule|proposed rule|regulation|regulatory|rulemaking|medicare|medicaid|cms|"
+    r"federal policy|agency rule|code of federal regulations|cfr)\b",
     re.I,
 )
 
@@ -145,7 +160,7 @@ def source_profile_for_claim(text: str) -> SourceProfile:
                 if value not in domains:
                     domains.append(value)
 
-    use_federal_register = base.use_federal_register or bool(FEDERAL_REGISTER_CUES.search(text or ""))
+    use_federal_register = base.use_federal_register and bool(FEDERAL_REGISTER_CUES.search(text or ""))
 
     return SourceProfile(
         name=base.name,
