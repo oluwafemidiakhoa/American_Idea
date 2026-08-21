@@ -4,6 +4,7 @@ from pydantic import BaseModel, Field, HttpUrl
 ClaimStatus = Literal["supported", "partially_supported", "contested", "unsupported", "unresolved"]
 EvidenceRelation = Literal["supports", "contradicts", "contextualizes", "mentions", "unverified_lead"]
 FetchStatus = Literal["verified", "fetch_failed", "not_fetched", "skipped"]
+SnapshotStatus = Literal["fingerprinted_not_persisted", "persisted"]
 
 
 class AnalyzeRequest(BaseModel):
@@ -54,7 +55,8 @@ class IngestUrlResponse(AnalysisResponse):
     title: str | None
     content_sha256: str
     extracted_text_length: int
-    snapshot_status: Literal["fingerprinted_not_persisted"] = "fingerprinted_not_persisted"
+    snapshot_status: SnapshotStatus = "fingerprinted_not_persisted"
+    ledger_persisted: bool = False
     evidence_link_count: int = 0
     claims_with_evidence: int = 0
 
@@ -71,4 +73,6 @@ class VerifyEvidenceResponse(BaseModel):
     factual_claim_count: int
     fetched_source_count: int
     verified_evidence_count: int
+    ledger_persisted: bool = False
+    ledger_revision_count: int = 0
     methodology_note: str
