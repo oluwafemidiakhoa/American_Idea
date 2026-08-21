@@ -70,12 +70,12 @@ BASE_PROFILES = {
         official_domains=("fda.gov", "nih.gov", "cdc.gov"),
         use_clinical_trials=True,
         use_pubmed=True,
-        use_federal_register=True,
+        use_federal_register=False,
     ),
     "finance_business": SourceProfile(
         name="finance_business",
         official_domains=("sec.gov", "ftc.gov", "justice.gov"),
-        use_federal_register=True,
+        use_federal_register=False,
     ),
     "government_policy": SourceProfile(
         name="government_policy",
@@ -96,9 +96,9 @@ BASE_PROFILES = {
         name="science_environment",
         official_domains=("nasa.gov", "noaa.gov", "usgs.gov", "epa.gov", "nsf.gov"),
         use_pubmed=True,
-        use_federal_register=True,
+        use_federal_register=False,
     ),
-    "general": SourceProfile(name="general", official_domains=(), use_federal_register=True),
+    "general": SourceProfile(name="general", official_domains=(), use_federal_register=False),
 }
 
 ENTITY_DOMAINS = {
@@ -117,6 +117,12 @@ ENTITY_DOMAINS = {
     "amazon": ("aboutamazon.com",),
     "tesla": ("tesla.com",),
 }
+
+FEDERAL_REGISTER_CUES = re.compile(
+    r"\b(?:federal register|final rule|proposed rule|regulation|regulatory|notice|executive order|rulemaking|"
+    r"medicare|medicaid|cms|federal policy|agency rule|tariff|sanction)\b",
+    re.I,
+)
 
 
 def classify_claim_domain(text: str) -> str:
@@ -139,12 +145,14 @@ def source_profile_for_claim(text: str) -> SourceProfile:
                 if value not in domains:
                     domains.append(value)
 
+    use_federal_register = base.use_federal_register or bool(FEDERAL_REGISTER_CUES.search(text or ""))
+
     return SourceProfile(
         name=base.name,
         official_domains=tuple(domains),
         use_clinical_trials=base.use_clinical_trials,
         use_pubmed=base.use_pubmed,
-        use_federal_register=base.use_federal_register,
+        use_federal_register=use_federal_register,
     )
 
 
