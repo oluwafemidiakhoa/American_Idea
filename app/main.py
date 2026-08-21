@@ -8,6 +8,7 @@ from fastapi.staticfiles import StaticFiles
 
 from .models import AnalyzeRequest, AnalysisResponse, IngestUrlRequest, IngestUrlResponse
 from .services.claim_extractor import extract_candidate_claims
+from .services.evidence_engine import attach_source_link_evidence
 from .services.url_ingestor import IngestionError, ingest_article_url
 
 BASE_DIR = Path(__file__).resolve().parent
@@ -15,8 +16,8 @@ STATIC_DIR = BASE_DIR / "static"
 
 app = FastAPI(
     title="American Idea Evidence API",
-    version="0.4.0",
-    description="Transparent claim extraction, secure URL ingestion, and evidence-led news analysis.",
+    version="0.6.0",
+    description="Transparent claim extraction, secure URL ingestion, and source-linked evidence leads.",
 )
 
 app.add_middleware(
@@ -41,7 +42,7 @@ def home():
 
 @app.get("/api/health")
 def health():
-    return {"status": "ok", "service": "american-idea-evidence", "version": "0.4.0"}
+    return {"status": "ok", "service": "american-idea-evidence", "version": "0.6.0"}
 
 
 @app.post("/api/analyze", response_model=AnalysisResponse)
@@ -56,7 +57,7 @@ def analyze(payload: AnalyzeRequest):
         methodology_note=(
             "Candidate factual claims are extracted using transparent heuristics. "
             "Extraction confidence estimates whether a statement appears externally verifiable; "
-            "it is not a truth score. Claims remain unresolved until evidence is attached."
+            "it is not a truth score. Claims remain unresolved until evidence is attached and evaluated."
         ),
     )
 
@@ -69,6 +70,11 @@ def ingest_url(payload: IngestUrlRequest):
         raise HTTPException(status_code=422, detail=str(exc)) from exc
 
     claims = extract_candidate_claims(article.text)
+    claims = attach_source_link_evidence(claims, article.blocks, article.final_url)
+
+    evidence_link_count = sum(len(claim.get("evidence", [])) for claim in claims)
+    claims_with_evidence = sum(1 for claim in claims if claim.get("evidence"))
+
     return IngestUrlResponse(
         record_id=f"ai_{uuid4().hex[:16]}",
         source_name=article.source_name,
@@ -80,10 +86,12 @@ def ingest_url(payload: IngestUrlRequest):
         extracted_text_length=len(article.text),
         claims=claims,
         factual_claim_count=len(claims),
+        evidence_link_count=evidence_link_count,
+        claims_with_evidence=claims_with_evidence,
         methodology_note=(
-            "American Idea fetched the public HTML page, extracted readable article text, "
-            "fingerprinted that extracted text with SHA-256, and identified candidate factual claims. "
-            "The fingerprint is returned but the article snapshot is not yet persisted in MVP 0.4. "
-            "No claim is labeled true or false without evidence."
+            "American Idea fetched the public HTML page, extracted readable article text, fingerprinted "
+            "that text with SHA-256, identified candidate factual claims, and attached source-linked "
+            "evidence leads found in the same article passages. These links are provenance leads, not "
+            "independent verification. No claim changes from unresolved merely because the article links to a source."
         ),
     )
