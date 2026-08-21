@@ -2,6 +2,8 @@ from typing import Literal
 from pydantic import BaseModel, Field, HttpUrl
 
 ClaimStatus = Literal["supported", "partially_supported", "contested", "unsupported", "unresolved"]
+EvidenceRelation = Literal["supports", "contradicts", "contextualizes", "mentions", "unverified_lead"]
+FetchStatus = Literal["verified", "fetch_failed", "not_fetched", "skipped"]
 
 
 class AnalyzeRequest(BaseModel):
@@ -19,6 +21,12 @@ class EvidenceItem(BaseModel):
     label: str
     url: str | None = None
     note: str | None = None
+    relation: EvidenceRelation = "unverified_lead"
+    verification_confidence: float = Field(default=0.0, ge=0, le=1)
+    fetch_status: FetchStatus = "not_fetched"
+    source_title: str | None = None
+    source_excerpt: str | None = None
+    source_sha256: str | None = None
 
 
 class Claim(BaseModel):
@@ -28,6 +36,7 @@ class Claim(BaseModel):
     confidence: float = Field(ge=0, le=1)
     why_flagged: list[str] = []
     evidence: list[EvidenceItem] = []
+    status_basis: str | None = None
 
 
 class AnalysisResponse(BaseModel):
@@ -48,3 +57,18 @@ class IngestUrlResponse(AnalysisResponse):
     snapshot_status: Literal["fingerprinted_not_persisted"] = "fingerprinted_not_persisted"
     evidence_link_count: int = 0
     claims_with_evidence: int = 0
+
+
+class VerifyEvidenceRequest(BaseModel):
+    article_url: HttpUrl
+    claims: list[Claim]
+    max_fetches: int = Field(default=6, ge=1, le=12)
+
+
+class VerifyEvidenceResponse(BaseModel):
+    article_url: str
+    claims: list[Claim]
+    factual_claim_count: int
+    fetched_source_count: int
+    verified_evidence_count: int
+    methodology_note: str
