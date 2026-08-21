@@ -43,7 +43,7 @@ class AutonomousVerificationTests(unittest.TestCase):
     @patch("app.services.autonomous_verification.save_verification", return_value=0)
     @patch("app.services.autonomous_verification.verify_claim_evidence")
     @patch("app.services.autonomous_verification.save_discovery_leads", return_value=1)
-    @patch("app.services.autonomous_verification.discover_evidence_for_claim")
+    @patch("app.services.autonomous_verification.discover_with_provider_plans")
     @patch("app.services.autonomous_verification.get_record")
     def test_context_improves_discovery_but_verification_uses_exact_claim(
         self,
@@ -71,17 +71,18 @@ class AutonomousVerificationTests(unittest.TestCase):
         get_record.side_effect = [record, refreshed, refreshed]
         discover.return_value = {
             "domain_profile": "life_science",
-            "queries": ["Hoge Moderna Merck melanoma vaccine"],
+            "queries": ["Moderna Merck melanoma vaccine"],
+            "provider_query_plan": {"clinicaltrials_gov": ["Moderna Merck melanoma"]},
             "leads": [{"kind": "primary", "title": "trial", "url": "https://clinicaltrials.gov/study/NCT1"}],
         }
         verify.return_value = ([refreshed_claim], 1, 1)
 
         result = autonomously_verify_claim(record_id="ai_12345678", claim_id="target")
 
-        discovery_text = discover.call_args.args[0]
-        self.assertIn(exact, discovery_text)
-        self.assertIn("Moderna", discovery_text)
-        self.assertIn("Keytruda", discovery_text)
+        self.assertEqual(discover.call_args.args[0], exact)
+        anchors = discover.call_args.kwargs["retrieval_anchors"]
+        self.assertIn("Moderna", anchors)
+        self.assertIn("Keytruda", anchors)
         verification_claim = verify.call_args.args[0][0]
         self.assertEqual(verification_claim["text"], exact)
         self.assertTrue(result["discovery_context"])
@@ -89,7 +90,7 @@ class AutonomousVerificationTests(unittest.TestCase):
     @patch("app.services.autonomous_verification.save_verification", return_value=0)
     @patch("app.services.autonomous_verification.verify_claim_evidence")
     @patch("app.services.autonomous_verification.save_discovery_leads", return_value=1)
-    @patch("app.services.autonomous_verification.discover_evidence_for_claim")
+    @patch("app.services.autonomous_verification.discover_with_provider_plans")
     @patch("app.services.autonomous_verification.get_record")
     def test_failed_url_is_not_retried_in_new_fetch_budget(
         self,
@@ -135,6 +136,7 @@ class AutonomousVerificationTests(unittest.TestCase):
         get_record.side_effect = [record, refreshed, updated]
         discover.return_value = {
             "queries": ["test public result 2026"],
+            "provider_query_plan": {"gdelt": ["test public result 2026"]},
             "leads": [
                 {"kind": "secondary", "title": "blocked again", "url": "https://blocked.example/story"},
                 {"kind": "primary", "title": "official", "url": "https://agency.gov/record"},
