@@ -4,7 +4,7 @@ from urllib.parse import urlparse
 
 import httpx
 
-from .source_intelligence import is_life_science_claim, official_domains_for_claim
+from .source_intelligence import source_profile_for_claim
 
 TOKEN_RE = re.compile(r"[A-Za-z0-9][A-Za-z0-9'’.-]*")
 NUMBER_RE = re.compile(r"\b(?:19|20)\d{2}\b|\b\d+(?:\.\d+)?%?\b")
@@ -45,7 +45,6 @@ def _tokens(text: str) -> list[str]:
 
 
 def build_discovery_queries(claim_text: str, *, max_queries: int = 3) -> list[str]:
-    """Create short, inspectable searches from a claim."""
     tokens = _tokens(claim_text)
     numbers = NUMBER_RE.findall(claim_text)
     proper = [token for token in tokens if token[:1].isupper()]
@@ -57,7 +56,6 @@ def build_discovery_queries(claim_text: str, *, max_queries: int = 3) -> list[st
         queries.append(" ".join(base_terms))
     if numbers and base_terms:
         queries.append(" ".join(base_terms[:6] + numbers[:2]))
-
     normalized = re.sub(r"\s+", " ", claim_text).strip()
     if 20 <= len(normalized) <= 140:
         queries.append(f'"{normalized}"')
@@ -82,7 +80,14 @@ def _is_same_source(url: str, article_url: str | None) -> bool:
 
 def discover_gdelt(query: str, *, article_url: str | None = None, max_results: int = 8, timeout_seconds: float = 8.0) -> list[DiscoveryLead]:
     endpoint = "https://api.gdeltproject.org/api/v2/doc/doc"
-    params = {"query": query, "mode": "artlist", "format": "json", "maxrecords": max(1, min(max_results * 2, 30)), "timespan": "3months", "sort": "datedesc"}
+    params = {
+        "query": query,
+        "mode": "artlist",
+        "format": "json",
+        "maxrecords": max(1, min(max_results * 2, 30)),
+        "timespan": "3months",
+        "sort": "datedesc",
+    }
     try:
         response = httpx.get(endpoint, params=params, timeout=timeout_seconds, headers={"User-Agent": "AmericanIdeaEvidence/1.3"})
         response.raise_for_status()
@@ -101,17 +106,34 @@ def discover_gdelt(query: str, *, article_url: str | None = None, max_results: i
         if not host:
             continue
         seen.add(url)
-        leads.append(DiscoveryLead(provider="gdelt", kind="secondary", title=title[:300], url=url, source_name=str(item.get("domain") or host), published_at=str(item.get("seendate") or "") or None, query=query, note="Discovered through GDELT global news search. This is an unverified secondary lead, not corroboration by itself."))
+        leads.append(
+            DiscoveryLead(
+                provider="gdelt",
+                kind="secondary",
+                title=title[:300],
+                url=url,
+                source_name=str(item.get("domain") or host),
+                published_at=str(item.get("seendate") or "") or None,
+                query=query,
+                note="Independent-coverage discovery lead from GDELT. Search position and outlet reputation are not treated as evidence of truth.",
+            )
+        )
         if len(leads) >= max_results:
             break
     return leads
 
 
 def discover_official_domain(query: str, *, domain: str, max_results: int = 4, timeout_seconds: float = 8.0) -> list[DiscoveryLead]:
-    """Use GDELT as an index to locate pages on an explicitly allowed official organization domain."""
     endpoint = "https://api.gdeltproject.org/api/v2/doc/doc"
     scoped_query = f"({query}) domain:{domain}"
-    params = {"query": scoped_query, "mode": "artlist", "format": "json", "maxrecords": max(1, min(max_results * 2, 20)), "timespan": "1year", "sort": "datedesc"}
+    params = {
+        "query": scoped_query,
+        "mode": "artlist",
+        "format": "json",
+        "maxrecords": max(1, min(max_results * 2, 20)),
+        "timespan": "1year",
+        "sort": "datedesc",
+    }
     try:
         response = httpx.get(endpoint, params=params, timeout=timeout_seconds, headers={"User-Agent": "AmericanIdeaEvidence/1.3"})
         response.raise_for_status()
@@ -121,20 +143,34 @@ def discover_official_domain(query: str, *, domain: str, max_results: int = 4, t
 
     leads: list[DiscoveryLead] = []
     seen: set[str] = set()
+    expected = domain.removeprefix("www.")
     for item in payload.get("articles") or []:
         url = str(item.get("url") or "").strip()
         title = str(item.get("title") or "").strip()
-        if not url or not title or url in seen or _host(url) != domain.removeprefix("www."):
+        if not url or not title or url in seen or _host(url) != expected:
             continue
         seen.add(url)
-        leads.append(DiscoveryLead(provider="official_domain", kind="primary", title=title[:300], url=url, source_name=domain, published_at=str(item.get("seendate") or "") or None, query=query, note="Issuer-controlled primary source discovered on an official organization domain. It can verify what the organization reported, but is not independent corroboration of efficacy or outcome claims."))
+        leads.append(
+            DiscoveryLead(
+                provider="official_domain",
+                kind="primary",
+                title=title[:300],
+                url=url,
+                source_name=domain,
+                published_at=str(item.get("seendate") or "") or None,
+                query=query,
+                note=(
+                    f"Discovered on the official or entity-controlled domain {domain}. This is primary evidence for what that "
+                    "organization publishes, but is not automatically independent corroboration of the underlying claim."
+                ),
+            )
+        )
         if len(leads) >= max_results:
             break
     return leads
 
 
 def discover_clinical_trials(query: str, *, max_results: int = 6, timeout_seconds: float = 8.0) -> list[DiscoveryLead]:
-    """Search ClinicalTrials.gov v2 for registered-study primary records."""
     endpoint = "https://clinicaltrials.gov/api/v2/studies"
     params = {"query.term": query, "pageSize": max(1, min(max_results, 20)), "format": "json"}
     try:
@@ -155,7 +191,21 @@ def discover_clinical_trials(query: str, *, max_results: int = 6, timeout_second
         if not nct_id or not title:
             continue
         lead_sponsor = (sponsor.get("leadSponsor") or {}).get("name")
-        leads.append(DiscoveryLead(provider="clinicaltrials_gov", kind="primary", title=title[:300], url=f"https://clinicaltrials.gov/study/{nct_id}", source_name=str(lead_sponsor or "ClinicalTrials.gov"), published_at=str(status.get("studyFirstPostDateStruct", {}).get("date") or "") or None, query=query, note="ClinicalTrials.gov registered-study record. Useful for study design, enrollment, endpoints, sponsor, and status; a registry record alone does not prove a reported efficacy result."))
+        leads.append(
+            DiscoveryLead(
+                provider="clinicaltrials_gov",
+                kind="primary",
+                title=title[:300],
+                url=f"https://clinicaltrials.gov/study/{nct_id}",
+                source_name=str(lead_sponsor or "ClinicalTrials.gov"),
+                published_at=str(status.get("studyFirstPostDateStruct", {}).get("date") or "") or None,
+                query=query,
+                note=(
+                    "ClinicalTrials.gov registered-study record. Useful for study design, enrollment, endpoints, sponsor, status, "
+                    "and submitted results when present; registration alone does not prove efficacy."
+                ),
+            )
+        )
         if len(leads) >= max_results:
             break
     return leads
@@ -181,7 +231,18 @@ def discover_federal_register(query: str, *, max_results: int = 6, timeout_secon
         seen.add(url)
         agencies = item.get("agencies") or []
         agency_names = [str(agency.get("name")) for agency in agencies if agency.get("name")]
-        leads.append(DiscoveryLead(provider="federal_register", kind="primary", title=title[:300], url=url, source_name=", ".join(agency_names[:3]) or "Federal Register", published_at=str(item.get("publication_date") or "") or None, query=query, note="Official Federal Register result. It remains an evidence lead until fetched and compared with the claim."))
+        leads.append(
+            DiscoveryLead(
+                provider="federal_register",
+                kind="primary",
+                title=title[:300],
+                url=url,
+                source_name=", ".join(agency_names[:3]) or "Federal Register",
+                published_at=str(item.get("publication_date") or "") or None,
+                query=query,
+                note="Official Federal Register result. It remains an evidence lead until fetched and compared with the claim.",
+            )
+        )
         if len(leads) >= max_results:
             break
     return leads
@@ -189,26 +250,25 @@ def discover_federal_register(query: str, *, max_results: int = 6, timeout_secon
 
 def discover_evidence_for_claim(claim_text: str, *, article_url: str | None = None, max_results: int = 12) -> dict:
     queries = build_discovery_queries(claim_text)
+    profile = source_profile_for_claim(claim_text)
     leads: list[DiscoveryLead] = []
     seen_urls: set[str] = set()
-    life_science = is_life_science_claim(claim_text)
-    official_domains = official_domains_for_claim(claim_text) if life_science else []
 
     def add(items: list[DiscoveryLead]) -> None:
         for lead in items:
-            if lead.url not in seen_urls:
+            if lead.url and lead.url not in seen_urls:
                 seen_urls.add(lead.url)
                 leads.append(lead)
 
     for query in queries[:2]:
-        if life_science:
+        if profile.use_clinical_trials:
             add(discover_clinical_trials(query, max_results=4))
-            for domain in official_domains:
-                add(discover_official_domain(query, domain=domain, max_results=3))
-        else:
+        if profile.use_federal_register:
             add(discover_federal_register(query, max_results=4))
-        add(discover_gdelt(query, article_url=article_url, max_results=6))
-        if len(leads) >= max_results:
+        for domain in profile.official_domains[:5]:
+            add(discover_official_domain(query, domain=domain, max_results=2))
+        add(discover_gdelt(query, article_url=article_url, max_results=7))
+        if len(leads) >= max_results * 2:
             break
 
     provider_rank = {"clinicaltrials_gov": 0, "federal_register": 0, "official_domain": 1, "gdelt": 2}
@@ -217,14 +277,15 @@ def discover_evidence_for_claim(claim_text: str, *, article_url: str | None = No
 
     return {
         "claim_text": claim_text,
+        "domain_profile": profile.name,
         "queries": queries,
-        "domain": "life_science" if life_science else "general",
+        "official_domains": list(profile.official_domains),
         "providers_used": sorted({lead.provider for lead in leads}),
         "leads": [lead.to_dict() for lead in leads],
         "lead_count": len(leads),
         "methodology_note": (
-            "Evidence Discovery routes recognized life-science claims toward ClinicalTrials.gov and relevant official organization domains before general news discovery. "
-            "Registry records verify registered study facts; issuer-controlled pages verify what an organization reported; neither is treated as independent proof of efficacy. "
-            "All discovery results remain leads until fetched, fingerprinted, and compared with the claim."
+            "Evidence Discovery is general-purpose with domain-aware routing. Recognized topics add likely primary sources, while every "
+            "claim retains broad independent discovery. Results remain unverified leads until fetched, fingerprinted, compared with the "
+            "claim, and passed through the public Trust Gate."
         ),
     }
