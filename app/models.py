@@ -46,3 +46,5 @@ class IngestUrlResponse(AnalysisResponse):
     content_sha256: str
     extracted_text_length: int
     snapshot_status: Literal["fingerprinted_not_persisted"] = "fingerprinted_not_persisted"
+    evidence_link_count: int = 0
+    claims_with_evidence: int = 0
