@@ -2,10 +2,10 @@ from collections import Counter
 from urllib.parse import urlparse
 
 from .discovery_store import save_discovery_leads
-from .evidence_discovery import discover_evidence_for_claim
 from .evidence_verifier import verify_claim_evidence
 from .ledger import get_record, save_verification
-from .retrieval_anchors import build_anchor_query, extract_retrieval_anchors
+from .provider_discovery import discover_with_provider_plans
+from .retrieval_anchors import extract_retrieval_anchors
 
 
 def _host(url: str | None) -> str:
@@ -48,8 +48,14 @@ def _matrix(claim: dict) -> dict:
     verified_hosts = sorted({_host(item.get("url")) for item in verified if _host(item.get("url"))})
     primary_verified = [item for item in verified if item.get("kind") == "primary"]
     secondary_verified = [item for item in verified if item.get("kind") == "secondary"]
-    strongest_support = max((float(item.get("verification_confidence") or 0) for item in verified if item.get("relation") == "supports"), default=0.0)
-    strongest_contradiction = max((float(item.get("verification_confidence") or 0) for item in verified if item.get("relation") == "contradicts"), default=0.0)
+    strongest_support = max(
+        (float(item.get("verification_confidence") or 0) for item in verified if item.get("relation") == "supports"),
+        default=0.0,
+    )
+    strongest_contradiction = max(
+        (float(item.get("verification_confidence") or 0) for item in verified if item.get("relation") == "contradicts"),
+        default=0.0,
+    )
 
     return {
         "claim_id": claim.get("id"),
@@ -81,12 +87,13 @@ def autonomously_verify_claim(*, record_id: str, claim_id: str, discovery_limit:
     exact_claim_text = str(claim.get("text") or "").strip()
     context = _discovery_context(record, claim_id)
     anchors = extract_retrieval_anchors(exact_claim_text, context["text"])
-    anchor_query = build_anchor_query(exact_claim_text, context["text"])
 
-    # Retrieval starts with stable entities/identifiers when available, then includes the exact claim
-    # and inspectable context. Verification still uses only the exact stored claim.
-    discovery_parts = [part for part in (anchor_query, exact_claim_text, context["text"]) if part]
-    discovery_text = " ".join(discovery_parts)
+    discovery = discover_with_provider_plans(
+        exact_claim_text,
+        retrieval_anchors=anchors,
+        article_url=record.get("article_url"),
+        max_results=discovery_limit,
+    )
 
     existing_evidence = list(claim.get("evidence", []))
     existing_urls = {str(item.get("url") or "").strip() for item in existing_evidence if item.get("url")}
@@ -96,13 +103,9 @@ def autonomously_verify_claim(*, record_id: str, claim_id: str, discovery_limit:
         if item.get("fetch_status") == "fetch_failed" and item.get("url")
     }
 
-    discovery = discover_evidence_for_claim(
-        discovery_text,
-        article_url=record.get("article_url"),
-        max_results=discovery_limit,
-    )
     new_leads = [
-        lead for lead in discovery.get("leads", [])
+        lead
+        for lead in discovery.get("leads", [])
         if str(lead.get("url") or "").strip()
         and str(lead.get("url") or "").strip() not in existing_urls
         and str(lead.get("url") or "").strip() not in failed_urls
@@ -120,7 +123,8 @@ def autonomously_verify_claim(*, record_id: str, claim_id: str, discovery_limit:
     verification_claim = dict(refreshed_claim)
     verification_claim["text"] = exact_claim_text
     verification_claim["evidence"] = [
-        dict(item) for item in refreshed_claim.get("evidence", [])
+        dict(item)
+        for item in refreshed_claim.get("evidence", [])
         if item.get("fetch_status") != "fetch_failed"
     ]
 
@@ -138,7 +142,7 @@ def autonomously_verify_claim(*, record_id: str, claim_id: str, discovery_limit:
     revision_count = save_verification(
         article_url=record.get("article_url") or "",
         claims=[verified_claim],
-        methodology_version="1.5.0",
+        methodology_version="1.5.1",
     )
 
     updated_record = get_record(record_id)
@@ -153,6 +157,7 @@ def autonomously_verify_claim(*, record_id: str, claim_id: str, discovery_limit:
         "claim_id": claim_id,
         "domain_profile": discovery.get("domain_profile", "general"),
         "queries": discovery.get("queries", []),
+        "provider_query_plan": discovery.get("provider_query_plan", {}),
         "retrieval_anchors": anchors,
         "discovery_context": context["components"],
         "providers_used": discovery.get("providers_used", []),
@@ -164,8 +169,8 @@ def autonomously_verify_claim(*, record_id: str, claim_id: str, discovery_limit:
         "claim": updated_claim,
         "evidence_matrix": _matrix(updated_claim),
         "methodology_note": (
-            "Autonomous verification uses stable retrieval anchors plus inspectable saved-story context to find evidence, but fetched pages "
-            "are compared only against the exact stored claim. Retrieval anchors, context, provider rank, and search position never count "
-            "as evidence and cannot bypass the Trust Gate."
+            "Each evidence provider receives a compact provider-specific query plan derived from stable retrieval anchors and domain terms. "
+            "Story context may help identify anchors, but fetched evidence is still compared only against the exact stored claim. Search "
+            "queries, provider rank, and source reputation never count as evidence and cannot bypass the Trust Gate."
         ),
     }
