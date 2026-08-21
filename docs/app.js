@@ -1,4 +1,5 @@
 const $ = (id) => document.getElementById(id);
+const API_BASE = "https://americanidea-production.up.railway.app";
 
 const sample = `Federal officials reported that 1,240,000 people enrolled in the program in 2025, an increase of 18% from 2024. According to the agency's annual report, the program cost $4.6 billion in 2025. The governor said Tuesday that the policy had reduced processing times by 30%. An independent audit found that average processing time fell from 42 days to 31 days. Critics said the program was the worst reform in decades and should be repealed immediately. The agency announced that a revised dataset would be published in September 2026.`;
 
@@ -110,8 +111,8 @@ $("analyze").addEventListener("click", async () => {
   const error = $("error");
   error.hidden = true;
 
-  if (articleText.length < 20) {
-    error.textContent = "Paste at least a short article excerpt.";
+  if (!articleUrl && articleText.length < 20) {
+    error.textContent = "Paste a public article URL or at least a short article excerpt.";
     error.hidden = false;
     return;
   }
@@ -119,7 +120,7 @@ $("analyze").addEventListener("click", async () => {
   if (articleUrl) {
     try { new URL(articleUrl); }
     catch {
-      error.textContent = "The article URL is not valid. You can leave it blank in the public preview.";
+      error.textContent = "The article URL is not valid.";
       error.hidden = false;
       return;
     }
@@ -127,36 +128,54 @@ $("analyze").addEventListener("click", async () => {
 
   const btn = $("analyze");
   btn.disabled = true;
-  btn.textContent = "Analyzing…";
+  btn.textContent = articleUrl ? "Fetching story…" : "Analyzing…";
 
   try {
+    if (articleUrl) {
+      const response = await fetch(`${API_BASE}/api/ingest-url`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", "Accept": "application/json" },
+        body: JSON.stringify({ article_url: articleUrl }),
+      });
+
+      const data = await response.json().catch(() => null);
+      if (!response.ok) {
+        const message = data?.detail || data?.message || `The source could not be analyzed (HTTP ${response.status}).`;
+        throw new Error(message);
+      }
+      render(data);
+      return;
+    }
+
     const claims = await extractCandidateClaims(articleText);
     render({
       record_id: `ai_preview_${Date.now().toString(36)}`,
       source_name: sourceName || null,
-      article_url: articleUrl || null,
+      article_url: null,
       claims,
       factual_claim_count: claims.length,
-      methodology_note: "Public preview: candidate factual claims are extracted locally in your browser with transparent heuristics. Extraction confidence estimates whether a sentence looks verifiable; it is not a truth score. Every claim remains unresolved until evidence is attached.",
+      methodology_note: "Local text mode: candidate factual claims are extracted in your browser with transparent heuristics. Extraction confidence estimates whether a sentence looks verifiable; it is not a truth score. Every claim remains unresolved until evidence is attached.",
     });
   } catch (e) {
     error.textContent = e?.message || "Analysis failed.";
     error.hidden = false;
   } finally {
     btn.disabled = false;
-    btn.textContent = "Extract claims";
+    btn.textContent = "Analyze story";
   }
 });
 
 function render(data) {
   $("results").hidden = false;
-  $("record").textContent = data.record_id;
+  $("record").textContent = data.title || data.record_id;
   $("count").textContent = data.factual_claim_count;
   $("methodology").textContent = data.methodology_note;
 
   const meta = [];
   if (data.source_name) meta.push(`Source: ${escapeHtml(data.source_name)}`);
-  if (data.article_url) meta.push(`<a href="${escapeAttr(data.article_url)}" target="_blank" rel="noreferrer">Open referenced article</a>`);
+  if (data.article_url) meta.push(`<a href="${escapeAttr(data.article_url)}" target="_blank" rel="noreferrer">Open source article</a>`);
+  if (data.content_sha256) meta.push(`SHA-256: <code>${escapeHtml(data.content_sha256.slice(0, 16))}…</code>`);
+  if (data.snapshot_status) meta.push(`Snapshot: ${escapeHtml(data.snapshot_status.replaceAll("_", " "))}`);
   $("record-meta").innerHTML = meta.join(" · ");
 
   $("claims").innerHTML = data.claims.length
@@ -172,7 +191,7 @@ function render(data) {
         ${c.why_flagged.length ? `<ul class="reasons">${c.why_flagged.map((r) => `<li>${escapeHtml(r)}</li>`).join("")}</ul>` : ""}
         <div class="claim-id">${escapeHtml(c.id)}</div>
       </article>`).join("")
-    : `<article class="claim"><h3>No strong candidate factual claims detected.</h3><p>Try a longer excerpt containing measurable, dated, or attributable assertions.</p></article>`;
+    : `<article class="claim"><h3>No strong candidate factual claims detected.</h3><p>This does not mean the article is true or false. It means the current extractor did not identify strong verifiable claim candidates.</p></article>`;
 
   $("results").scrollIntoView({ behavior: "smooth", block: "start" });
 }
