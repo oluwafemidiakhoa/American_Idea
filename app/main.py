@@ -18,6 +18,7 @@ from .models import (
     VerifyEvidenceRequest,
     VerifyEvidenceResponse,
 )
+from .services.atomic_ledger import hydrate_atomic_claims, init_atomic_ledger, save_atomic_claims
 from .services.claim_extractor import extract_candidate_claims
 from .services.coverage_compare import compare_records
 from .services.evidence_engine import attach_source_link_evidence
@@ -33,10 +34,10 @@ PUBLIC_STORYLENS_URL = "https://oluwafemidiakhoa.github.io/American_Idea/"
 
 app = FastAPI(
     title="American Idea Evidence API",
-    version="1.4.0",
+    version="2.0.0",
     description=(
-        "Evidence-first news analysis with direct public-data adapters, domain-aware discovery, provider diagnostics, "
-        "an auditable Trust Gate, bounded autonomous verification, a persistent Claim Ledger, Compare Coverage, and Story Timeline."
+        "Evidence-first news analysis with Atomic Claim Provenance, evidence contracts, direct public-data adapters, "
+        "domain-aware discovery, an auditable Trust Gate, a persistent Claim Ledger, Compare Coverage, and Story Timeline."
     ),
 )
 
@@ -63,6 +64,7 @@ def startup() -> None:
         try:
             init_ledger()
             init_timeline()
+            init_atomic_ledger()
         except Exception as exc:
             print(f"American Idea persistence initialization failed: {exc}")
 
@@ -77,16 +79,20 @@ def health():
     return {
         "status": "ok",
         "service": "american-idea-evidence",
-        "version": "1.4.0",
+        "version": "2.0.0",
         "ledger_configured": ledger_enabled(),
         "story_timeline": True,
         "evidence_discovery": True,
         "autonomous_verification": True,
         "trust_gate": True,
         "provider_diagnostics": True,
+        "atomic_claim_provenance": True,
+        "evidence_contracts": True,
+        "record_scoped_atomic_ledger": True,
         "source_profiles": [
             "general",
             "life_science",
+            "geopolitics_conflict",
             "finance_business",
             "government_policy",
             "legal_courts",
@@ -102,7 +108,7 @@ def record(record_id: str):
     if not ledger_enabled():
         raise HTTPException(status_code=503, detail="Persistent Claim Ledger is not configured.")
     try:
-        data = get_record(record_id)
+        data = hydrate_atomic_claims(get_record(record_id))
     except Exception as exc:
         raise HTTPException(status_code=503, detail="Persistent Claim Ledger is temporarily unavailable.") from exc
     if data is None:
@@ -147,6 +153,8 @@ def refresh_record(record_id: str):
 
     try:
         new_record_id = save_story_analysis(article=article, claims=claims)
+        if new_record_id:
+            save_atomic_claims(record_id=new_record_id, claims=claims)
         record_observation(
             record_id=new_record_id,
             article_url=article.final_url,
@@ -168,7 +176,7 @@ def refresh_record(record_id: str):
         "timeline": timeline,
         "methodology_note": (
             "Refresh re-fetches the same public URL and compares the extracted article fingerprint with the latest saved snapshot. "
-            "A different fingerprint creates a new immutable record; an unchanged fingerprint records an observation only."
+            "Atomic Claim Provenance is recompiled and stored per immutable story snapshot."
         ),
     }
 
@@ -185,7 +193,7 @@ def compare_coverage(payload: CompareCoverageRequest):
     missing = []
     try:
         for record_id in unique_ids:
-            data = get_record(record_id)
+            data = hydrate_atomic_claims(get_record(record_id))
             if data is None:
                 missing.append(record_id)
             else:
@@ -211,8 +219,8 @@ def analyze(payload: AnalyzeRequest):
         claims=claims,
         factual_claim_count=len(claims),
         methodology_note=(
-            "Candidate factual claims are extracted using transparent heuristics. Extraction confidence estimates whether "
-            "a statement appears externally verifiable; it is not a truth score."
+            "Candidate newsroom sentences are extracted using transparent heuristics and compiled into atomic propositions. "
+            "Extraction confidence estimates external verifiability; it is not a truth score."
         ),
     )
 
@@ -234,6 +242,7 @@ def ingest_url(payload: IngestUrlRequest):
             previous = latest_record_for_url(article.final_url)
             stored_id = save_story_analysis(article=article, claims=claims)
             if stored_id:
+                save_atomic_claims(record_id=stored_id, claims=claims)
                 record_id = stored_id
                 persisted = True
                 record_observation(
@@ -262,9 +271,8 @@ def ingest_url(payload: IngestUrlRequest):
         evidence_link_count=evidence_link_count,
         claims_with_evidence=claims_with_evidence,
         methodology_note=(
-            "American Idea fetched and fingerprinted the article, extracted candidate claims, attached source-linked leads, "
-            "and persisted an immutable record when configured. Verification uses direct public-data adapters, domain-aware discovery, "
-            "a general fallback, provider diagnostics, and the Trust Gate."
+            "American Idea fetched and fingerprinted the article, extracted candidate newsroom sentences, compiled each into atomic "
+            "propositions with explicit evidence contracts, attached source-linked leads, and persisted the decomposition per story snapshot."
         ),
     )
 
@@ -278,7 +286,7 @@ def verify_evidence(payload: VerifyEvidenceRequest):
     if ledger_enabled():
         try:
             revision_count = save_verification(
-                article_url=str(payload.article_url), claims=claims, methodology_version="1.4.0"
+                article_url=str(payload.article_url), claims=claims, methodology_version="2.0.0"
             )
             persisted = True
         except Exception as exc:
@@ -293,7 +301,8 @@ def verify_evidence(payload: VerifyEvidenceRequest):
         ledger_persisted=persisted,
         ledger_revision_count=revision_count,
         methodology_note=(
-            "American Idea fetched a bounded evidence set, fingerprinted retrieved pages, classified relevant passages, "
-            "and passed every proposed resolved status through an auditable Trust Gate before publication."
+            "American Idea fetched a bounded evidence set, fingerprinted retrieved sources, classified relevant passages, "
+            "and passed every proposed resolved status through an auditable Trust Gate. Compound newsroom sentences remain "
+            "conservative until their material atomic propositions can be evaluated independently."
         ),
     )
