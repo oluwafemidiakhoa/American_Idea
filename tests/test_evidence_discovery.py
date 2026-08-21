@@ -25,7 +25,7 @@ class EvidenceDiscoveryTests(unittest.TestCase):
             DiscoveryLead(
                 provider="federal_register",
                 kind="primary",
-                title="Official document",
+                title="Official final rule document",
                 url=duplicate_url,
                 source_name="Agency",
             )
@@ -34,7 +34,7 @@ class EvidenceDiscoveryTests(unittest.TestCase):
             DiscoveryLead(
                 provider="gdelt",
                 kind="secondary",
-                title="Republished document",
+                title="Republished final rule document",
                 url=duplicate_url,
                 source_name="example.gov",
             ),
@@ -49,7 +49,9 @@ class EvidenceDiscoveryTests(unittest.TestCase):
         with patch("app.services.evidence_discovery.discover_federal_register", return_value=federal), patch(
             "app.services.evidence_discovery.discover_gdelt", return_value=gdelt
         ):
-            result = discover_evidence_for_claim("Agency announced a program change in 2026.")
+            result = discover_evidence_for_claim(
+                "The agency published a final rule in the Federal Register changing the program in 2026."
+            )
 
         urls = [lead["url"] for lead in result["leads"]]
         self.assertEqual(urls.count(duplicate_url), 1)
