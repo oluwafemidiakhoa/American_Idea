@@ -5,27 +5,31 @@ from fastapi import FastAPI
 from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 
-from .models import AnalyzeRequest, AnalysisResponse
+from .models import AnalyzeRequest, AnalysisResponse, EvidenceAssessment, EvidenceCandidateRequest
 from .services.claim_extractor import extract_candidate_claims
+from .services.evidence_engine import assess_evidence_candidate
 
 BASE_DIR = Path(__file__).resolve().parent
 STATIC_DIR = BASE_DIR / "static"
 
 app = FastAPI(
     title="American Idea Evidence API",
-    version="0.1.0",
+    version="0.3.0",
     description="Transparent claim extraction and evidence-led news analysis MVP.",
 )
 
 app.mount("/static", StaticFiles(directory=STATIC_DIR), name="static")
 
+
 @app.get("/", include_in_schema=False)
 def home():
     return FileResponse(STATIC_DIR / "index.html")
 
+
 @app.get("/api/health")
 def health():
-    return {"status": "ok", "service": "american-idea-evidence", "version": "0.1.0"}
+    return {"status": "ok", "service": "american-idea-evidence", "version": "0.3.0"}
+
 
 @app.post("/api/analyze", response_model=AnalysisResponse)
 def analyze(payload: AnalyzeRequest):
@@ -38,7 +42,24 @@ def analyze(payload: AnalyzeRequest):
         factual_claim_count=len(claims),
         methodology_note=(
             "MVP mode extracts candidate factual claims using transparent heuristics. "
-            "It does not label claims true or false without evidence. Evidence retrieval, "
-            "cross-source comparison, provenance, and human review are the next layers."
+            "It does not label claims true or false without evidence. Evidence quality is assessed "
+            "separately from claim truth, and consequential claims remain unresolved pending review."
         ),
     )
+
+
+@app.post("/api/evidence/assess", response_model=EvidenceAssessment)
+def assess_evidence(payload: EvidenceCandidateRequest):
+    result = assess_evidence_candidate(
+        claim_id=payload.claim_id,
+        label=payload.label,
+        url=str(payload.url) if payload.url else None,
+        kind=payload.kind,
+        relation=payload.relation,
+        source_type=payload.source_type,
+        directness=payload.directness,
+        independence=payload.independence,
+        has_capture_hash=payload.has_capture_hash,
+        note=payload.note,
+    )
+    return EvidenceAssessment(**result)
