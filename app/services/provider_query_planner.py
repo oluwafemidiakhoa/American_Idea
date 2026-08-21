@@ -1,9 +1,9 @@
 import re
 
 NOISE_TERMS = {
-    "story", "title", "source", "nearby", "claim", "cnn", "reuters", "said", "wednesday", "monday",
-    "tuesday", "thursday", "friday", "saturday", "sunday", "helped", "prevent", "return", "spread",
-    "large", "more", "than", "people", "patients",
+    "story", "title", "source", "nearby", "claim", "cnn", "reuters", "fox", "news", "digital", "live", "updates",
+    "said", "says", "wednesday", "monday", "tuesday", "thursday", "friday", "saturday", "sunday", "helped",
+    "prevent", "return", "spread", "large", "more", "than", "people", "patients", "appearing", "take",
 }
 
 PROFILE_TERMS = {
@@ -11,12 +11,17 @@ PROFILE_TERMS = {
         "melanoma", "cancer", "vaccine", "trial", "clinical trial", "phase 3", "phase 2", "pembrolizumab",
         "keytruda", "intismeran", "mrna", "recurrence", "metastasis", "survival", "tumor", "oncology",
     ),
+    "geopolitics_conflict": (
+        "iran", "iranian", "israel", "ukraine", "russia", "china", "taiwan", "gaza", "war", "ceasefire",
+        "military", "missile", "airstrike", "conflict", "peace talks", "sanction", "sanctions", "strait of hormuz",
+        "nato", "united nations", "foreign minister", "supreme leader",
+    ),
     "finance_business": (
         "revenue", "earnings", "profit", "guidance", "shares", "stock", "securities", "merger", "acquisition",
         "10-k", "10-q", "8-k", "debt", "bankruptcy", "dividend",
     ),
     "government_policy": (
-        "executive order", "rule", "regulation", "policy", "tariff", "sanction", "budget", "agency", "congress",
+        "executive order", "rule", "regulation", "policy", "tariff", "budget", "agency", "congress",
     ),
     "legal_courts": (
         "lawsuit", "court", "ruling", "indictment", "complaint", "appeal", "settlement", "verdict", "justice",
@@ -45,6 +50,17 @@ def _unique(values: list[str]) -> list[str]:
     return out
 
 
+def _clean_anchor(value: str) -> str:
+    """Remove UI/outlet/context-label noise from multi-word context anchors."""
+    kept: list[str] = []
+    for token in WORD_RE.findall(value or ""):
+        normalized = token.lower().strip(".'’-")
+        if normalized in NOISE_TERMS:
+            continue
+        kept.append(token.strip(".'’-"))
+    return " ".join(kept)
+
+
 def _profile_terms(text: str, profile_name: str) -> list[str]:
     lowered = text.lower()
     return [term for term in PROFILE_TERMS.get(profile_name, ()) if term in lowered]
@@ -68,7 +84,7 @@ def build_provider_query_plan(
     retrieval_anchors: list[str] | None = None,
     max_queries: int = 3,
 ) -> dict[str, list[str]]:
-    anchors = _unique(list(retrieval_anchors or []))
+    anchors = _unique([cleaned for value in (retrieval_anchors or []) if (cleaned := _clean_anchor(value))])
     identifiers = _unique(IDENTIFIER_RE.findall(" ".join([claim_text] + anchors)))
     entities = [
         value for value in anchors
@@ -118,6 +134,18 @@ def build_provider_query_plan(
         plans["official_domain"] = broad or generic
         plans["gdelt"] = broad or generic
         plans["federal_register"] = generic
+    elif profile_name == "geopolitics_conflict":
+        exact_terms = _unique(_profile_terms(claim_text, profile_name))
+        broad = _unique([
+            q(*exact_terms[:4]),
+            q(*fallback[:6]),
+            q(*(base_entities[:2] + exact_terms[:3])),
+        ])[:max_queries]
+        plans["official_domain"] = broad or generic
+        plans["gdelt"] = broad or generic
+        plans["federal_register"] = []
+        plans["clinicaltrials_gov"] = []
+        plans["pubmed"] = []
     else:
         for provider in ("clinicaltrials_gov", "pubmed", "federal_register", "official_domain", "gdelt"):
             plans[provider] = generic
