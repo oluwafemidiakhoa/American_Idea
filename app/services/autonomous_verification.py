@@ -18,11 +18,6 @@ def _lead_identity(item: dict) -> tuple[str, str]:
 
 
 def _discovery_context(record: dict, claim_id: str) -> dict:
-    """Build a small, inspectable context envelope for search only.
-
-    The exact claim is never changed. Title/source/neighbouring claims may help locate evidence,
-    but fetched passages are still verified only against the exact claim text.
-    """
     claims = record.get("claims", [])
     index = next((i for i, item in enumerate(claims) if item.get("id") == claim_id), None)
     parts: list[str] = []
@@ -41,11 +36,7 @@ def _discovery_context(record: dict, claim_id: str) -> dict:
                 if text:
                     parts.append(f"Nearby claim: {text[:260]}")
 
-    context_text = " ".join(parts)
-    return {
-        "text": context_text,
-        "components": parts,
-    }
+    return {"text": " ".join(parts), "components": parts}
 
 
 def _matrix(claim: dict) -> dict:
@@ -121,7 +112,6 @@ def autonomously_verify_claim(*, record_id: str, claim_id: str, discovery_limit:
     if refreshed_claim is None:
         raise RuntimeError("Claim disappeared during verification.")
 
-    # Verification always uses the stored exact claim, never the context-assisted search text.
     verification_claim = dict(refreshed_claim)
     verification_claim["text"] = exact_claim_text
     verification_claim["evidence"] = [
@@ -143,7 +133,7 @@ def autonomously_verify_claim(*, record_id: str, claim_id: str, discovery_limit:
     revision_count = save_verification(
         article_url=record.get("article_url") or "",
         claims=[verified_claim],
-        methodology_version="1.3.2",
+        methodology_version="1.4.0",
     )
 
     updated_record = get_record(record_id)
@@ -159,6 +149,8 @@ def autonomously_verify_claim(*, record_id: str, claim_id: str, discovery_limit:
         "domain_profile": discovery.get("domain_profile", "general"),
         "queries": discovery.get("queries", []),
         "discovery_context": context["components"],
+        "providers_used": discovery.get("providers_used", []),
+        "provider_diagnostics": discovery.get("provider_diagnostics", {}),
         "new_discovered_lead_count": len(new_leads),
         "fetched_source_count": fetched_source_count,
         "verified_evidence_count": verified_evidence_count,
@@ -166,8 +158,8 @@ def autonomously_verify_claim(*, record_id: str, claim_id: str, discovery_limit:
         "claim": updated_claim,
         "evidence_matrix": _matrix(updated_claim),
         "methodology_note": (
-            "Autonomous verification may use the saved story title, source, and neighbouring claims only to improve evidence discovery. "
-            "Those context fields never change the claim and never count as evidence. Fetched pages are fingerprinted and compared only "
-            "against the exact stored claim before the Trust Gate can publish any resolved status."
+            "Autonomous verification may use saved story context only to improve discovery. Direct public-data adapters and broad discovery "
+            "report provider diagnostics, while fetched pages are compared only against the exact stored claim. Context and provider rank "
+            "never count as evidence and cannot bypass the Trust Gate."
         ),
     }
