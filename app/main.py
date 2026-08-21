@@ -3,7 +3,7 @@ from uuid import uuid4
 
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import FileResponse
+from fastapi.responses import RedirectResponse
 from fastapi.staticfiles import StaticFiles
 
 from .models import (
@@ -21,10 +21,11 @@ from .services.url_ingestor import IngestionError, ingest_article_url
 
 BASE_DIR = Path(__file__).resolve().parent
 STATIC_DIR = BASE_DIR / "static"
+PUBLIC_STORYLENS_URL = "https://oluwafemidiakhoa.github.io/American_Idea/"
 
 app = FastAPI(
     title="American Idea Evidence API",
-    version="0.7.0",
+    version="0.7.1",
     description=(
         "Transparent claim extraction, secure URL ingestion, source-linked evidence leads, "
         "and conservative linked-source verification."
@@ -48,12 +49,14 @@ app.mount("/static", StaticFiles(directory=STATIC_DIR), name="static")
 
 @app.get("/", include_in_schema=False)
 def home():
-    return FileResponse(STATIC_DIR / "index.html")
+    # Keep one canonical public StoryLens experience. Railway is the API host;
+    # GitHub Pages is the public product UI.
+    return RedirectResponse(PUBLIC_STORYLENS_URL, status_code=307)
 
 
 @app.get("/api/health")
 def health():
-    return {"status": "ok", "service": "american-idea-evidence", "version": "0.7.0"}
+    return {"status": "ok", "service": "american-idea-evidence", "version": "0.7.1"}
 
 
 @app.post("/api/analyze", response_model=AnalysisResponse)
