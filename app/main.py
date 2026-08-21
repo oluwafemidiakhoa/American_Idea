@@ -33,10 +33,10 @@ PUBLIC_STORYLENS_URL = "https://oluwafemidiakhoa.github.io/American_Idea/"
 
 app = FastAPI(
     title="American Idea Evidence API",
-    version="1.3.0",
+    version="1.4.0",
     description=(
-        "Evidence-first news analysis with domain-aware source discovery, an auditable Trust Gate, "
-        "bounded autonomous verification, a persistent Claim Ledger, Compare Coverage, and Story Timeline."
+        "Evidence-first news analysis with direct public-data adapters, domain-aware discovery, provider diagnostics, "
+        "an auditable Trust Gate, bounded autonomous verification, a persistent Claim Ledger, Compare Coverage, and Story Timeline."
     ),
 )
 
@@ -77,12 +77,13 @@ def health():
     return {
         "status": "ok",
         "service": "american-idea-evidence",
-        "version": "1.3.0",
+        "version": "1.4.0",
         "ledger_configured": ledger_enabled(),
         "story_timeline": True,
         "evidence_discovery": True,
         "autonomous_verification": True,
         "trust_gate": True,
+        "provider_diagnostics": True,
         "source_profiles": [
             "general",
             "life_science",
@@ -92,7 +93,7 @@ def health():
             "elections",
             "science_environment",
         ],
-        "discovery_providers": ["clinicaltrials_gov", "federal_register", "official_domain", "gdelt"],
+        "discovery_providers": ["clinicaltrials_gov", "pubmed", "federal_register", "official_domain", "gdelt"],
     }
 
 
@@ -262,7 +263,8 @@ def ingest_url(payload: IngestUrlRequest):
         claims_with_evidence=claims_with_evidence,
         methodology_note=(
             "American Idea fetched and fingerprinted the article, extracted candidate claims, attached source-linked leads, "
-            "and persisted an immutable record when configured. Verification uses domain-aware discovery plus a general fallback and Trust Gate."
+            "and persisted an immutable record when configured. Verification uses direct public-data adapters, domain-aware discovery, "
+            "a general fallback, provider diagnostics, and the Trust Gate."
         ),
     )
 
@@ -276,7 +278,7 @@ def verify_evidence(payload: VerifyEvidenceRequest):
     if ledger_enabled():
         try:
             revision_count = save_verification(
-                article_url=str(payload.article_url), claims=claims, methodology_version="1.3.0"
+                article_url=str(payload.article_url), claims=claims, methodology_version="1.4.0"
             )
             persisted = True
         except Exception as exc:
