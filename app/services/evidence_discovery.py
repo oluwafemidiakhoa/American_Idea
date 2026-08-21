@@ -89,7 +89,7 @@ def discover_gdelt(query: str, *, article_url: str | None = None, max_results: i
         "sort": "datedesc",
     }
     try:
-        response = httpx.get(endpoint, params=params, timeout=timeout_seconds, headers={"User-Agent": "AmericanIdeaEvidence/1.3"})
+        response = httpx.get(endpoint, params=params, timeout=timeout_seconds, headers={"User-Agent": "AmericanIdeaEvidence/1.4"})
         response.raise_for_status()
         payload = response.json()
     except (httpx.HTTPError, ValueError):
@@ -135,7 +135,7 @@ def discover_official_domain(query: str, *, domain: str, max_results: int = 4, t
         "sort": "datedesc",
     }
     try:
-        response = httpx.get(endpoint, params=params, timeout=timeout_seconds, headers={"User-Agent": "AmericanIdeaEvidence/1.3"})
+        response = httpx.get(endpoint, params=params, timeout=timeout_seconds, headers={"User-Agent": "AmericanIdeaEvidence/1.4"})
         response.raise_for_status()
         payload = response.json()
     except (httpx.HTTPError, ValueError):
@@ -170,11 +170,65 @@ def discover_official_domain(query: str, *, domain: str, max_results: int = 4, t
     return leads
 
 
+def discover_pubmed(query: str, *, max_results: int = 6, timeout_seconds: float = 8.0) -> list[DiscoveryLead]:
+    search_url = "https://eutils.ncbi.nlm.nih.gov/entrez/eutils/esearch.fcgi"
+    summary_url = "https://eutils.ncbi.nlm.nih.gov/entrez/eutils/esummary.fcgi"
+    headers = {"User-Agent": "AmericanIdeaEvidence/1.4"}
+    try:
+        search = httpx.get(
+            search_url,
+            params={"db": "pubmed", "term": query, "retmode": "json", "retmax": max(1, min(max_results, 20)), "sort": "relevance"},
+            timeout=timeout_seconds,
+            headers=headers,
+        )
+        search.raise_for_status()
+        ids = [str(value) for value in (search.json().get("esearchresult", {}).get("idlist") or []) if str(value).isdigit()]
+        if not ids:
+            return []
+        summary = httpx.get(
+            summary_url,
+            params={"db": "pubmed", "id": ",".join(ids), "retmode": "json"},
+            timeout=timeout_seconds,
+            headers=headers,
+        )
+        summary.raise_for_status()
+        payload = summary.json().get("result") or {}
+    except (httpx.HTTPError, ValueError):
+        return []
+
+    leads: list[DiscoveryLead] = []
+    for pmid in ids:
+        item = payload.get(pmid) or {}
+        title = re.sub(r"\s+", " ", str(item.get("title") or "")).strip()
+        if not title:
+            continue
+        pubdate = str(item.get("pubdate") or "").strip() or None
+        source = str(item.get("source") or "PubMed").strip() or "PubMed"
+        leads.append(
+            DiscoveryLead(
+                provider="pubmed",
+                kind="secondary",
+                title=title[:300],
+                url=f"https://pubmed.ncbi.nlm.nih.gov/{pmid}/",
+                source_name=source,
+                published_at=pubdate,
+                query=query,
+                note=(
+                    "PubMed-indexed research lead. Indexing identifies a scientific publication; the article must still be fetched "
+                    "or otherwise inspected and compared with the exact claim before it can affect claim status."
+                ),
+            )
+        )
+        if len(leads) >= max_results:
+            break
+    return leads
+
+
 def discover_clinical_trials(query: str, *, max_results: int = 6, timeout_seconds: float = 8.0) -> list[DiscoveryLead]:
     endpoint = "https://clinicaltrials.gov/api/v2/studies"
     params = {"query.term": query, "pageSize": max(1, min(max_results, 20)), "format": "json"}
     try:
-        response = httpx.get(endpoint, params=params, timeout=timeout_seconds, headers={"User-Agent": "AmericanIdeaEvidence/1.3"})
+        response = httpx.get(endpoint, params=params, timeout=timeout_seconds, headers={"User-Agent": "AmericanIdeaEvidence/1.4"})
         response.raise_for_status()
         payload = response.json()
     except (httpx.HTTPError, ValueError):
@@ -215,7 +269,7 @@ def discover_federal_register(query: str, *, max_results: int = 6, timeout_secon
     endpoint = "https://www.federalregister.gov/api/v1/documents.json"
     params = {"conditions[term]": query, "per_page": max(1, min(max_results, 20)), "order": "newest"}
     try:
-        response = httpx.get(endpoint, params=params, timeout=timeout_seconds, headers={"User-Agent": "AmericanIdeaEvidence/1.3"})
+        response = httpx.get(endpoint, params=params, timeout=timeout_seconds, headers={"User-Agent": "AmericanIdeaEvidence/1.4"})
         response.raise_for_status()
         payload = response.json()
     except (httpx.HTTPError, ValueError):
@@ -253,6 +307,16 @@ def discover_evidence_for_claim(claim_text: str, *, article_url: str | None = No
     profile = source_profile_for_claim(claim_text)
     leads: list[DiscoveryLead] = []
     seen_urls: set[str] = set()
+    diagnostics: dict[str, dict] = {}
+
+    def record(provider: str, attempted: bool, items: list[DiscoveryLead] | None = None, note: str | None = None) -> None:
+        count = len(items or [])
+        diagnostics[provider] = {
+            "attempted": attempted,
+            "result_count": count,
+            "status": "results" if count else ("no_results_or_unavailable" if attempted else "not_routed"),
+            "note": note,
+        }
 
     def add(items: list[DiscoveryLead]) -> None:
         for lead in items:
@@ -260,18 +324,43 @@ def discover_evidence_for_claim(claim_text: str, *, article_url: str | None = No
                 seen_urls.add(lead.url)
                 leads.append(lead)
 
+    aggregate_counts = {"clinicaltrials_gov": 0, "pubmed": 0, "federal_register": 0, "official_domain": 0, "gdelt": 0}
+    attempted = {key: False for key in aggregate_counts}
+
     for query in queries[:2]:
         if profile.use_clinical_trials:
-            add(discover_clinical_trials(query, max_results=4))
+            attempted["clinicaltrials_gov"] = True
+            items = discover_clinical_trials(query, max_results=4)
+            aggregate_counts["clinicaltrials_gov"] += len(items)
+            add(items)
+        if profile.use_pubmed:
+            attempted["pubmed"] = True
+            items = discover_pubmed(query, max_results=5)
+            aggregate_counts["pubmed"] += len(items)
+            add(items)
         if profile.use_federal_register:
-            add(discover_federal_register(query, max_results=4))
+            attempted["federal_register"] = True
+            items = discover_federal_register(query, max_results=4)
+            aggregate_counts["federal_register"] += len(items)
+            add(items)
+        if profile.official_domains:
+            attempted["official_domain"] = True
         for domain in profile.official_domains[:5]:
-            add(discover_official_domain(query, domain=domain, max_results=2))
-        add(discover_gdelt(query, article_url=article_url, max_results=7))
+            items = discover_official_domain(query, domain=domain, max_results=2)
+            aggregate_counts["official_domain"] += len(items)
+            add(items)
+        attempted["gdelt"] = True
+        items = discover_gdelt(query, article_url=article_url, max_results=7)
+        aggregate_counts["gdelt"] += len(items)
+        add(items)
         if len(leads) >= max_results * 2:
             break
 
-    provider_rank = {"clinicaltrials_gov": 0, "federal_register": 0, "official_domain": 1, "gdelt": 2}
+    for provider, was_attempted in attempted.items():
+        synthetic = [None] * aggregate_counts[provider]
+        record(provider, was_attempted, synthetic, "Provider diagnostics report discovery output before URL deduplication.")
+
+    provider_rank = {"clinicaltrials_gov": 0, "federal_register": 0, "official_domain": 1, "pubmed": 2, "gdelt": 3}
     leads.sort(key=lambda item: (0 if item.kind == "primary" else 1, provider_rank.get(item.provider, 9), item.title.lower()))
     leads = leads[:max_results]
 
@@ -281,11 +370,12 @@ def discover_evidence_for_claim(claim_text: str, *, article_url: str | None = No
         "queries": queries,
         "official_domains": list(profile.official_domains),
         "providers_used": sorted({lead.provider for lead in leads}),
+        "provider_diagnostics": diagnostics,
         "leads": [lead.to_dict() for lead in leads],
         "lead_count": len(leads),
         "methodology_note": (
-            "Evidence Discovery is general-purpose with domain-aware routing. Recognized topics add likely primary sources, while every "
-            "claim retains broad independent discovery. Results remain unverified leads until fetched, fingerprinted, compared with the "
-            "claim, and passed through the public Trust Gate."
+            "Evidence Discovery combines direct public-data adapters with broad independent discovery. Provider diagnostics reveal which "
+            "source systems were routed and whether they produced candidate leads. All results remain unverified until fetched or otherwise "
+            "inspected, fingerprinted when possible, compared with the exact claim, and passed through the Trust Gate."
         ),
     }
