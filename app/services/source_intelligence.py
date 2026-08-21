@@ -7,6 +7,7 @@ class SourceProfile:
     name: str
     official_domains: tuple[str, ...] = ()
     use_clinical_trials: bool = False
+    use_pubmed: bool = False
     use_federal_register: bool = False
 
 
@@ -68,6 +69,7 @@ BASE_PROFILES = {
         name="life_science",
         official_domains=("fda.gov", "nih.gov", "cdc.gov"),
         use_clinical_trials=True,
+        use_pubmed=True,
         use_federal_register=True,
     ),
     "finance_business": SourceProfile(
@@ -93,13 +95,12 @@ BASE_PROFILES = {
     "science_environment": SourceProfile(
         name="science_environment",
         official_domains=("nasa.gov", "noaa.gov", "usgs.gov", "epa.gov", "nsf.gov"),
+        use_pubmed=True,
         use_federal_register=True,
     ),
     "general": SourceProfile(name="general", official_domains=(), use_federal_register=True),
 }
 
-# Entity-controlled domains are useful primary sources for what that entity itself reported.
-# They are never treated as independent corroboration merely because they are official.
 ENTITY_DOMAINS = {
     "moderna": ("modernatx.com",),
     "merck": ("merck.com",),
@@ -142,6 +143,7 @@ def source_profile_for_claim(text: str) -> SourceProfile:
         name=base.name,
         official_domains=tuple(domains),
         use_clinical_trials=base.use_clinical_trials,
+        use_pubmed=base.use_pubmed,
         use_federal_register=base.use_federal_register,
     )
 
