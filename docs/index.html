@@ -1,0 +1,99 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <meta name="description" content="American Idea Evidence — a public evidence layer for news and public claims." />
+  <meta name="theme-color" content="#f6f3ed" />
+  <title>American Idea Evidence — StoryLens</title>
+  <link rel="stylesheet" href="./styles.css" />
+</head>
+<body>
+  <header class="topbar">
+    <a class="brand" href="./" aria-label="American Idea Evidence home">
+      <span class="mark">AI</span>
+      <span>American Idea</span>
+    </a>
+    <div class="top-actions">
+      <a class="repo-link" href="https://github.com/oluwafemidiakhoa/American_Idea" target="_blank" rel="noreferrer">View source</a>
+      <span class="pill">Public Preview</span>
+    </div>
+  </header>
+
+  <main>
+    <section class="hero">
+      <p class="eyebrow">A PUBLIC EVIDENCE LAYER FOR NEWS</p>
+      <h1>Don't trust us.<br><span>Check the evidence.</span></h1>
+      <p class="lede">Turn reporting into auditable claims, sources, context, corrections, and provenance. Every candidate claim begins unresolved and must earn confidence from evidence.</p>
+    </section>
+
+    <section class="notice" aria-label="Preview notice">
+      <strong>Public preview:</strong> this GitHub Pages version runs the first-pass claim extractor in your browser. It does not declare claims true or false and does not upload pasted article text to American Idea. Evidence retrieval and URL ingestion will be connected to the backend in the next layer.
+    </section>
+
+    <section class="panel analyzer">
+      <div class="panel-title">
+        <div>
+          <p class="eyebrow">STORYLENS</p>
+          <h2>Analyze reporting</h2>
+        </div>
+        <span class="method">Transparent methodology</span>
+      </div>
+
+      <div class="form-grid">
+        <div>
+          <label for="source">Source name <span>optional</span></label>
+          <input id="source" autocomplete="off" placeholder="e.g., Reuters, Fox News, CNN" />
+        </div>
+        <div>
+          <label for="url">Article URL <span>reference only in public preview</span></label>
+          <input id="url" type="url" autocomplete="url" placeholder="https://..." />
+        </div>
+      </div>
+
+      <label for="text">Article text</label>
+      <textarea id="text" rows="12" placeholder="Paste the article or excerpt here. StoryLens will identify candidate factual claims without pretending to know whether they are true."></textarea>
+
+      <div class="actions">
+        <button id="analyze" type="button">Extract claims</button>
+        <button id="sample" type="button" class="secondary">Load sample</button>
+        <button id="clear" type="button" class="ghost">Clear</button>
+      </div>
+      <p id="error" class="error" hidden></p>
+    </section>
+
+    <section id="results" class="results" hidden>
+      <div class="results-head">
+        <div>
+          <p class="eyebrow">EVIDENCE RECORD</p>
+          <h2 id="record">Analysis</h2>
+          <div id="record-meta" class="record-meta"></div>
+        </div>
+        <div class="stat"><strong id="count">0</strong><span>candidate claims</span></div>
+      </div>
+      <div id="methodology" class="methodology"></div>
+      <div id="claims" class="claims"></div>
+    </section>
+
+    <section class="principles">
+      <p class="eyebrow">THE RULE</p>
+      <blockquote>No source is above evidence — including American Idea.</blockquote>
+      <p>The goal is not to replace judgment with an algorithm. The goal is to make claims, evidence, uncertainty, corrections, and provenance inspectable.</p>
+    </section>
+
+    <section class="future-grid">
+      <article><span>01</span><h3>Claim Ledger</h3><p>Every public claim gets an identity, revision history, and evidence trail.</p></article>
+      <article><span>02</span><h3>Compare Coverage</h3><p>See what multiple outlets agree on, emphasize, omit, or dispute.</p></article>
+      <article><span>03</span><h3>Story Timeline</h3><p>Watch a narrative change as evidence, corrections, and amplification appear.</p></article>
+      <article><span>04</span><h3>Public Provenance</h3><p>Preserve who said what, when, based on which source, with an auditable history.</p></article>
+    </section>
+  </main>
+
+  <footer>
+    <span>American Idea Evidence</span>
+    <span>Public preview · Evidence before verdicts.</span>
+  </footer>
+
+  <script src="./app.js"></script>
+</body>
+</html>
