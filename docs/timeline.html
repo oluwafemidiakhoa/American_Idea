@@ -1,0 +1,43 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <meta name="description" content="American Idea Evidence story timeline." />
+  <title>Story Timeline — American Idea</title>
+  <link rel="stylesheet" href="./styles.css" />
+</head>
+<body>
+  <header class="topbar">
+    <a class="brand" href="./"><span class="mark">AI</span><span>American Idea</span></a>
+    <div class="top-actions"><a class="repo-link" href="./record.html">Saved record</a><a class="repo-link" href="./compare.html">Compare Coverage</a><span class="pill">Story Timeline</span></div>
+  </header>
+  <main>
+    <section class="hero compact-hero">
+      <p class="eyebrow">IMMUTABLE SOURCE HISTORY</p>
+      <h1>See what<br><span>changed.</span></h1>
+      <p class="lede">Every distinct saved article body keeps its own fingerprint. Timeline compares versions without rewriting earlier evidence.</p>
+    </section>
+
+    <section class="panel">
+      <div class="form-grid">
+        <div><label for="timeline-id">Saved record ID</label><input id="timeline-id" autocomplete="off" placeholder="ai_..." /></div>
+        <div class="record-actions actions"><button id="load-timeline" type="button">Open timeline</button></div>
+      </div>
+      <p id="timeline-error" class="error" hidden></p>
+    </section>
+
+    <section id="timeline-results" class="results" hidden>
+      <div class="results-head">
+        <div><p class="eyebrow">STORY TIMELINE</p><h2 id="timeline-title">Version history</h2><div id="timeline-meta" class="record-meta"></div></div>
+        <div class="stat"><strong id="version-count">0</strong><span>versions</span></div>
+      </div>
+      <div id="timeline-method" class="methodology"></div>
+      <div id="versions" class="claims"></div>
+      <div id="observations" class="claims"></div>
+    </section>
+  </main>
+  <footer><span>American Idea Evidence</span><span>History without overwrite.</span></footer>
+  <script src="./timeline.js"></script>
+</body>
+</html>
