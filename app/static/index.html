@@ -1,0 +1,66 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>American Idea Evidence</title>
+  <link rel="stylesheet" href="/static/styles.css" />
+</head>
+<body>
+  <header class="topbar">
+    <div class="brand"><span class="mark">AI</span><span>American Idea</span></div>
+    <div class="pill">Evidence MVP</div>
+  </header>
+
+  <main>
+    <section class="hero">
+      <p class="eyebrow">A PUBLIC EVIDENCE LAYER FOR NEWS</p>
+      <h1>Don't trust us.<br><span>Check the evidence.</span></h1>
+      <p class="lede">Turn reporting into auditable claims, sources, context, corrections, and provenance. The system begins unresolved and earns confidence from evidence.</p>
+    </section>
+
+    <section class="panel analyzer">
+      <div class="panel-title">
+        <div>
+          <p class="eyebrow">STORYLENS</p>
+          <h2>Analyze an article</h2>
+        </div>
+        <span class="method">Transparent methodology</span>
+      </div>
+      <label>Source name <span>optional</span></label>
+      <input id="source" placeholder="e.g., Reuters, Fox News, CNN" />
+      <label>Article URL <span>optional in MVP</span></label>
+      <input id="url" type="url" placeholder="https://..." />
+      <label>Article text</label>
+      <textarea id="text" rows="11" placeholder="Paste the article text here. The MVP extracts candidate factual claims without pretending to know whether they are true."></textarea>
+      <div class="actions">
+        <button id="analyze">Extract claims</button>
+        <button id="sample" class="secondary">Load sample</button>
+      </div>
+      <p id="error" class="error" hidden></p>
+    </section>
+
+    <section id="results" class="results" hidden>
+      <div class="results-head">
+        <div>
+          <p class="eyebrow">EVIDENCE RECORD</p>
+          <h2 id="record">Analysis</h2>
+        </div>
+        <div class="stat"><strong id="count">0</strong><span>candidate claims</span></div>
+      </div>
+      <div id="methodology" class="methodology"></div>
+      <div id="claims" class="claims"></div>
+    </section>
+
+    <section class="future-grid">
+      <article><span>01</span><h3>Claim Ledger</h3><p>Every public claim gets an identity, revision history, and evidence trail.</p></article>
+      <article><span>02</span><h3>Compare Coverage</h3><p>See what multiple outlets agree on, emphasize, omit, or dispute.</p></article>
+      <article><span>03</span><h3>Story Timeline</h3><p>Watch a narrative change as evidence, corrections, and amplification appear.</p></article>
+      <article><span>04</span><h3>Public Provenance</h3><p>Preserve who said what, when, based on which source, with auditable history.</p></article>
+    </section>
+  </main>
+
+  <footer>American Idea Evidence · No source is above evidence — including us.</footer>
+  <script src="/static/app.js"></script>
+</body>
+</html>
