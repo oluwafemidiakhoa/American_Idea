@@ -10,14 +10,8 @@
 </head>
 <body>
   <header class="topbar">
-    <a class="brand" href="./" aria-label="American Idea Evidence home">
-      <span class="mark">AI</span>
-      <span>American Idea</span>
-    </a>
-    <div class="top-actions">
-      <a class="repo-link" href="https://github.com/oluwafemidiakhoa/American_Idea" target="_blank" rel="noreferrer">View source</a>
-      <span class="pill">Live Preview</span>
-    </div>
+    <a class="brand" href="./" aria-label="American Idea Evidence home"><span class="mark">AI</span><span>American Idea</span></a>
+    <div class="top-actions"><a class="repo-link" href="https://github.com/oluwafemidiakhoa/American_Idea" target="_blank" rel="noreferrer">View source</a><span class="pill">Live Preview</span></div>
   </header>
 
   <main>
@@ -28,34 +22,20 @@
     </section>
 
     <section class="notice" aria-label="Preview notice">
-      <strong>Live preview:</strong> paste a public news URL and StoryLens will fetch the article through the American Idea Evidence API, fingerprint the extracted text, and identify candidate factual claims. It still does not label claims true or false without evidence.
+      <strong>Live preview:</strong> analyze a public news URL to identify claims and source-linked evidence leads. Then use <strong>Verify evidence</strong> to fetch a limited set of those linked sources, fingerprint them, and compare their relevant passages with the claims. Automated verification is conservative and does not replace human review.
     </section>
 
     <section class="panel analyzer">
-      <div class="panel-title">
-        <div>
-          <p class="eyebrow">STORYLENS</p>
-          <h2>Analyze reporting</h2>
-        </div>
-        <span class="method">Transparent methodology</span>
-      </div>
-
+      <div class="panel-title"><div><p class="eyebrow">STORYLENS</p><h2>Analyze reporting</h2></div><span class="method">Transparent methodology</span></div>
       <div class="form-grid">
-        <div>
-          <label for="source">Source name <span>optional</span></label>
-          <input id="source" autocomplete="off" placeholder="e.g., Reuters, Fox News, CNN" />
-        </div>
-        <div>
-          <label for="url">Article URL</label>
-          <input id="url" type="url" autocomplete="url" placeholder="https://..." />
-        </div>
+        <div><label for="source">Source name <span>optional</span></label><input id="source" autocomplete="off" placeholder="e.g., Reuters, Fox News, CNN" /></div>
+        <div><label for="url">Article URL</label><input id="url" type="url" autocomplete="url" placeholder="https://..." /></div>
       </div>
-
       <label for="text">Or paste article text</label>
       <textarea id="text" rows="12" placeholder="Paste an article or excerpt here if you prefer local browser analysis instead of URL ingestion."></textarea>
-
       <div class="actions">
         <button id="analyze" type="button">Analyze story</button>
+        <button id="verify" type="button" class="secondary" hidden>Verify evidence</button>
         <button id="sample" type="button" class="secondary">Load sample</button>
         <button id="clear" type="button" class="ghost">Clear</button>
       </div>
@@ -64,22 +44,14 @@
 
     <section id="results" class="results" hidden>
       <div class="results-head">
-        <div>
-          <p class="eyebrow">EVIDENCE RECORD</p>
-          <h2 id="record">Analysis</h2>
-          <div id="record-meta" class="record-meta"></div>
-        </div>
+        <div><p class="eyebrow">EVIDENCE RECORD</p><h2 id="record">Analysis</h2><div id="record-meta" class="record-meta"></div></div>
         <div class="stat"><strong id="count">0</strong><span>candidate claims</span></div>
       </div>
       <div id="methodology" class="methodology"></div>
       <div id="claims" class="claims"></div>
     </section>
 
-    <section class="principles">
-      <p class="eyebrow">THE RULE</p>
-      <blockquote>No source is above evidence — including American Idea.</blockquote>
-      <p>The goal is not to replace judgment with an algorithm. The goal is to make claims, evidence, uncertainty, corrections, and provenance inspectable.</p>
-    </section>
+    <section class="principles"><p class="eyebrow">THE RULE</p><blockquote>No source is above evidence — including American Idea.</blockquote><p>The goal is not to replace judgment with an algorithm. The goal is to make claims, evidence, uncertainty, corrections, and provenance inspectable.</p></section>
 
     <section class="future-grid">
       <article><span>01</span><h3>Claim Ledger</h3><p>Every public claim gets an identity, revision history, and evidence trail.</p></article>
@@ -89,11 +61,7 @@
     </section>
   </main>
 
-  <footer>
-    <span>American Idea Evidence</span>
-    <span>Live preview · Evidence before verdicts.</span>
-  </footer>
-
+  <footer><span>American Idea Evidence</span><span>Live preview · Evidence before verdicts.</span></footer>
   <script src="./app.js"></script>
 </body>
 </html>
