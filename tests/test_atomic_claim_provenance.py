@@ -1,6 +1,8 @@
 import unittest
+from unittest.mock import patch
 
 from app.services.atomic_claims import compile_atomic_claims
+from app.services.autonomous_verification import _hydrated_record
 from app.services.claim_extractor import extract_candidate_claims
 from app.services.trust_gate import enforce_claim_trust
 
@@ -89,6 +91,32 @@ class AtomicTrustGateTests(unittest.TestCase):
         }
         enforced = enforce_claim_trust(claim)
         self.assertEqual(enforced["aggregate_status"], "mixed")
+
+
+class DeepVerifyAtomicHydrationTests(unittest.TestCase):
+    @patch("app.services.autonomous_verification.hydrate_atomic_claims")
+    @patch("app.services.autonomous_verification.get_record")
+    def test_deep_verify_record_loader_hydrates_atomic_graph(self, get_record, hydrate):
+        raw = {"record_id": "ai_test", "claims": [{"id": "claim_test", "text": "A compound claim."}]}
+        hydrated = {
+            **raw,
+            "claims": [{
+                "id": "claim_test",
+                "text": "A compound claim.",
+                "atomic_claims": [{"id": "atom_1", "status": "unresolved"}],
+                "atomic_claim_count": 1,
+                "aggregate_status": "unresolved",
+            }],
+        }
+        get_record.return_value = raw
+        hydrate.return_value = hydrated
+
+        result = _hydrated_record("ai_test")
+
+        get_record.assert_called_once_with("ai_test")
+        hydrate.assert_called_once_with(raw)
+        self.assertEqual(result["claims"][0]["atomic_claim_count"], 1)
+        self.assertEqual(result["claims"][0]["atomic_claims"][0]["id"], "atom_1")
 
 
 if __name__ == "__main__":
