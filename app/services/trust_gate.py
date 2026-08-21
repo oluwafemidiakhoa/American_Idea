@@ -9,6 +9,19 @@ def _host(url: str | None) -> str:
     return (urlparse(url).hostname or "").lower().removeprefix("www.")
 
 
+def _aggregate_atomic_status(claim: dict) -> str:
+    atoms = list(claim.get("atomic_claims") or [])
+    if not atoms:
+        return claim.get("status", "unresolved")
+    statuses = [str(atom.get("status") or "unresolved") for atom in atoms]
+    resolved = {status for status in statuses if status != "unresolved"}
+    if any(status == "unresolved" for status in statuses):
+        return "unresolved"
+    if len(resolved) == 1:
+        return next(iter(resolved))
+    return "mixed"
+
+
 def evaluate_claim_trust(claim: dict) -> dict:
     evidence = claim.get("evidence", []) or []
     verified = [item for item in evidence if item.get("fetch_status") == "verified"]
@@ -30,7 +43,14 @@ def evaluate_claim_trust(claim: dict) -> dict:
 
     proposed_status = claim.get("status", "unresolved")
     issues: list[str] = []
-    requirements_met = True
+
+    atoms = list(claim.get("atomic_claims") or [])
+    atomic_status = _aggregate_atomic_status(claim)
+    unresolved_atoms = [atom for atom in atoms if atom.get("status", "unresolved") == "unresolved"]
+    if atoms and proposed_status in RESOLVED_STATUSES and unresolved_atoms:
+        issues.append(
+            f"Atomic Claim Provenance blocks parent resolution while {len(unresolved_atoms)} of {len(atoms)} material propositions remain unresolved."
+        )
 
     if proposed_status == "supported":
         if not primary:
@@ -69,7 +89,6 @@ def evaluate_claim_trust(claim: dict) -> dict:
             issues.append("Contested status requires both strong supporting and strong contradicting evidence.")
 
     elif proposed_status == "unresolved":
-        # Unresolved is always safe to publish; explain why it remains conservative.
         if not verified:
             issues.append("No evidence source has been successfully fetched and verified yet.")
         elif not supports and not contradicts:
@@ -87,6 +106,9 @@ def evaluate_claim_trust(claim: dict) -> dict:
         "passed": requirements_met,
         "proposed_status": proposed_status,
         "public_status": public_status,
+        "aggregate_atomic_status": atomic_status,
+        "atomic_claim_count": len(atoms),
+        "unresolved_atomic_count": len(unresolved_atoms),
         "verified_source_count": len(verified),
         "verified_primary_count": len(primary),
         "verified_secondary_count": len(secondary),
@@ -96,11 +118,12 @@ def evaluate_claim_trust(claim: dict) -> dict:
         "failed_or_blocked_count": len(failed),
         "issues": issues,
         "basis": basis,
-        "methodology_version": "trust-gate-1.0",
+        "methodology_version": "trust-gate-2.0-atomic",
     }
 
 
 def enforce_claim_trust(claim: dict) -> dict:
+    claim["aggregate_status"] = _aggregate_atomic_status(claim)
     audit = evaluate_claim_trust(claim)
     claim["trust_gate"] = audit
     if audit["public_status"] != claim.get("status", "unresolved"):
