@@ -15,6 +15,20 @@ class SourceIntelligenceTests(unittest.TestCase):
         profile = source_profile_for_claim("The agency published a final rule in the Federal Register changing federal policy.")
         self.assertTrue(profile.use_federal_register)
 
+    def test_geopolitics_claim_does_not_route_federal_register(self):
+        claim = "Iranian president says it is time to end the war and criticizes radicals."
+        self.assertEqual(classify_claim_domain(claim), "geopolitics_conflict")
+        profile = source_profile_for_claim(claim)
+        self.assertFalse(profile.use_federal_register)
+        self.assertIn("state.gov", profile.official_domains)
+        self.assertIn("un.org", profile.official_domains)
+
+    def test_sanctions_alone_use_geopolitics_not_regulatory_register(self):
+        profile = source_profile_for_claim("Iran warned of a response to new US sanctions amid the war.")
+        self.assertEqual(profile.name, "geopolitics_conflict")
+        self.assertFalse(profile.use_federal_register)
+        self.assertIn("treasury.gov", profile.official_domains)
+
     def test_life_science_routes_to_trial_and_health_sources(self):
         profile = source_profile_for_claim("Moderna said its Phase 3 melanoma vaccine trial met its endpoint.")
         self.assertEqual(profile.name, "life_science")
