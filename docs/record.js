@@ -1,5 +1,6 @@
 const API_BASE = "https://americanidea-production.up.railway.app";
 const $ = (id) => document.getElementById(id);
+let currentRecordId = null;
 
 function escapeHtml(value) {
   return String(value ?? "").replace(/[&<>'"]/g, (ch) => ({"&":"&amp;","<":"&lt;",">":"&gt;","'":"&#39;",'"':"&quot;"}[ch]));
@@ -9,6 +10,7 @@ function escapeAttr(value){ return escapeHtml(value); }
 async function loadRecord(recordId) {
   const error = $("record-error");
   error.hidden = true;
+  $("refresh-note").hidden = true;
   const id = recordId.trim();
   if (!/^ai_[a-z0-9]{8,64}$/i.test(id)) {
     error.textContent = "Enter a valid saved record ID beginning with ai_.";
@@ -23,14 +25,51 @@ async function loadRecord(recordId) {
     const response = await fetch(`${API_BASE}/api/records/${encodeURIComponent(id)}`, {headers:{"Accept":"application/json"}});
     const data = await response.json().catch(() => null);
     if (!response.ok) throw new Error(data?.detail || `Record could not be loaded (HTTP ${response.status}).`);
+    currentRecordId = data.record_id;
     render(data);
-    history.replaceState(null, "", `?id=${encodeURIComponent(id)}`);
+    $("refresh-record").hidden = false;
+    $("timeline-link").hidden = false;
+    $("timeline-link").href = `./timeline.html?id=${encodeURIComponent(data.record_id)}`;
+    history.replaceState(null, "", `?id=${encodeURIComponent(data.record_id)}`);
   } catch (e) {
     error.textContent = e?.message || "Saved record could not be loaded.";
     error.hidden = false;
   } finally {
     button.disabled = false;
     button.textContent = "Open record";
+  }
+}
+
+async function refreshRecord() {
+  if (!currentRecordId) return;
+  const button = $("refresh-record");
+  const error = $("record-error");
+  const note = $("refresh-note");
+  error.hidden = true;
+  note.hidden = true;
+  button.disabled = true;
+  button.textContent = "Checking source…";
+  try {
+    const response = await fetch(`${API_BASE}/api/records/${encodeURIComponent(currentRecordId)}/refresh`, {
+      method: "POST",
+      headers: {"Accept":"application/json"},
+    });
+    const data = await response.json().catch(() => null);
+    if (!response.ok) throw new Error(data?.detail || `Story refresh failed (HTTP ${response.status}).`);
+    note.textContent = data.changed
+      ? `A changed source snapshot was detected and saved as ${data.record_id}. The previous record remains immutable.`
+      : "No article-text change was detected. The check was recorded without creating a fake new version.";
+    note.hidden = false;
+    currentRecordId = data.record_id;
+    $("record-id").value = data.record_id;
+    $("timeline-link").href = `./timeline.html?id=${encodeURIComponent(data.record_id)}`;
+    await loadRecord(data.record_id);
+  } catch (e) {
+    error.textContent = e?.message || "Story refresh failed.";
+    error.hidden = false;
+  } finally {
+    button.disabled = false;
+    button.textContent = "Refresh story";
   }
 }
 
@@ -71,6 +110,7 @@ function render(data) {
 }
 
 $("load-record").addEventListener("click", () => loadRecord($("record-id").value));
+$("refresh-record").addEventListener("click", refreshRecord);
 $("record-id").addEventListener("keydown", (event) => { if (event.key === "Enter") loadRecord($("record-id").value); });
 
 const initialId = new URLSearchParams(location.search).get("id");
