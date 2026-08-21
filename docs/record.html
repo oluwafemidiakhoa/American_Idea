@@ -1,0 +1,47 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <meta name="description" content="American Idea Evidence saved public record." />
+  <title>Saved Evidence Record — American Idea</title>
+  <link rel="stylesheet" href="./styles.css" />
+</head>
+<body>
+  <header class="topbar">
+    <a class="brand" href="./"><span class="mark">AI</span><span>American Idea</span></a>
+    <div class="top-actions"><a class="repo-link" href="./compare.html">Compare Coverage</a><span class="pill">Public Record</span></div>
+  </header>
+  <main>
+    <section class="hero compact-hero">
+      <p class="eyebrow">PERSISTENT CLAIM LEDGER</p>
+      <h1>Saved evidence<br><span>record.</span></h1>
+      <p class="lede">A durable snapshot of a story, its extracted claims, attached evidence, verification state, and revision history.</p>
+    </section>
+
+    <section class="panel">
+      <div class="form-grid">
+        <div>
+          <label for="record-id">Record ID</label>
+          <input id="record-id" autocomplete="off" placeholder="ai_..." />
+        </div>
+        <div class="record-actions">
+          <button id="load-record" type="button">Open record</button>
+        </div>
+      </div>
+      <p id="record-error" class="error" hidden></p>
+    </section>
+
+    <section id="saved-record" class="results" hidden>
+      <div class="results-head">
+        <div><p class="eyebrow">EVIDENCE RECORD</p><h2 id="saved-title">Saved record</h2><div id="saved-meta" class="record-meta"></div></div>
+        <div class="stat"><strong id="saved-count">0</strong><span>claims</span></div>
+      </div>
+      <div class="methodology">This page displays the current persisted state. Status history is shown when a stored claim has changed after verification.</div>
+      <div id="saved-claims" class="claims"></div>
+    </section>
+  </main>
+  <footer><span>American Idea Evidence</span><span>Persistent claims · Evidence before verdicts.</span></footer>
+  <script src="./record.js"></script>
+</body>
+</html>

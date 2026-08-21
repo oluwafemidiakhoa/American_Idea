@@ -9,12 +9,15 @@ from fastapi.staticfiles import StaticFiles
 from .models import (
     AnalyzeRequest,
     AnalysisResponse,
+    CompareCoverageRequest,
+    CompareCoverageResponse,
     IngestUrlRequest,
     IngestUrlResponse,
     VerifyEvidenceRequest,
     VerifyEvidenceResponse,
 )
 from .services.claim_extractor import extract_candidate_claims
+from .services.coverage_compare import compare_records
 from .services.evidence_engine import attach_source_link_evidence
 from .services.evidence_verifier import verify_claim_evidence
 from .services.ledger import enabled as ledger_enabled
@@ -27,10 +30,10 @@ PUBLIC_STORYLENS_URL = "https://oluwafemidiakhoa.github.io/American_Idea/"
 
 app = FastAPI(
     title="American Idea Evidence API",
-    version="0.8.0",
+    version="0.9.0",
     description=(
         "Transparent claim extraction, secure URL ingestion, conservative linked-source verification, "
-        "and an optional persistent PostgreSQL Claim Ledger."
+        "a persistent Claim Ledger, public saved records, and cross-record coverage comparison."
     ),
 )
 
@@ -51,12 +54,10 @@ app.mount("/static", StaticFiles(directory=STATIC_DIR), name="static")
 
 @app.on_event("startup")
 def startup() -> None:
-    # Persistence is deliberately optional. The API must still start if no database is attached.
     if ledger_enabled():
         try:
             init_ledger()
         except Exception as exc:
-            # Do not take the public analysis API down because persistence is temporarily unavailable.
             print(f"American Idea ledger initialization failed: {exc}")
 
 
@@ -70,7 +71,7 @@ def health():
     return {
         "status": "ok",
         "service": "american-idea-evidence",
-        "version": "0.8.0",
+        "version": "0.9.0",
         "ledger_configured": ledger_enabled(),
     }
 
@@ -86,6 +87,36 @@ def record(record_id: str):
     if data is None:
         raise HTTPException(status_code=404, detail="Evidence record was not found.")
     return data
+
+
+@app.post("/api/compare-coverage", response_model=CompareCoverageResponse)
+def compare_coverage(payload: CompareCoverageRequest):
+    if not ledger_enabled():
+        raise HTTPException(status_code=503, detail="Persistent Claim Ledger is required for saved-record comparison.")
+
+    unique_ids = list(dict.fromkeys(record_id.strip() for record_id in payload.record_ids if record_id.strip()))
+    if len(unique_ids) < 2:
+        raise HTTPException(status_code=422, detail="Provide at least two different saved record IDs.")
+
+    records = []
+    missing = []
+    try:
+        for record_id in unique_ids:
+            data = get_record(record_id)
+            if data is None:
+                missing.append(record_id)
+            else:
+                records.append(data)
+    except Exception as exc:
+        raise HTTPException(status_code=503, detail="Persistent Claim Ledger is temporarily unavailable.") from exc
+
+    if missing:
+        raise HTTPException(status_code=404, detail={"message": "One or more saved records were not found.", "record_ids": missing})
+
+    try:
+        return compare_records(records)
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
 
 
 @app.post("/api/analyze", response_model=AnalysisResponse)
@@ -168,7 +199,7 @@ def verify_evidence(payload: VerifyEvidenceRequest):
             revision_count = save_verification(
                 article_url=str(payload.article_url),
                 claims=claims,
-                methodology_version="0.8.0",
+                methodology_version="0.9.0",
             )
             persisted = True
         except Exception as exc:

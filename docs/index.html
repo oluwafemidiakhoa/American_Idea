@@ -11,18 +11,18 @@
 <body>
   <header class="topbar">
     <a class="brand" href="./" aria-label="American Idea Evidence home"><span class="mark">AI</span><span>American Idea</span></a>
-    <div class="top-actions"><a class="repo-link" href="https://github.com/oluwafemidiakhoa/American_Idea" target="_blank" rel="noreferrer">View source</a><span class="pill">Live Preview</span></div>
+    <div class="top-actions"><a class="repo-link" href="./record.html">Saved record</a><a class="repo-link" href="./compare.html">Compare Coverage</a><a class="repo-link" href="https://github.com/oluwafemidiakhoa/American_Idea" target="_blank" rel="noreferrer">Source</a><span class="pill">Live</span></div>
   </header>
 
   <main>
     <section class="hero">
       <p class="eyebrow">A PUBLIC EVIDENCE LAYER FOR NEWS</p>
       <h1>Don't trust us.<br><span>Check the evidence.</span></h1>
-      <p class="lede">Turn reporting into auditable claims, sources, context, corrections, and provenance. Every candidate claim begins unresolved and must earn confidence from evidence.</p>
+      <p class="lede">Turn reporting into auditable claims, sources, context, corrections, provenance, and persistent public records. Every candidate claim begins unresolved and must earn confidence from evidence.</p>
     </section>
 
     <section class="notice" aria-label="Preview notice">
-      <strong>Live preview:</strong> analyze a public news URL to identify claims and source-linked evidence leads. Then use <strong>Verify evidence</strong> to fetch a limited set of those linked sources, fingerprint them, and compare their relevant passages with the claims. Automated verification is conservative and does not replace human review.
+      <strong>Live:</strong> analyze a public news URL, inspect source-linked evidence, verify selected linked sources, save the record to the Claim Ledger when PostgreSQL is configured, and compare saved records across outlets.
     </section>
 
     <section class="panel analyzer">
@@ -43,25 +43,21 @@
     </section>
 
     <section id="results" class="results" hidden>
-      <div class="results-head">
-        <div><p class="eyebrow">EVIDENCE RECORD</p><h2 id="record">Analysis</h2><div id="record-meta" class="record-meta"></div></div>
-        <div class="stat"><strong id="count">0</strong><span>candidate claims</span></div>
-      </div>
-      <div id="methodology" class="methodology"></div>
-      <div id="claims" class="claims"></div>
+      <div class="results-head"><div><p class="eyebrow">EVIDENCE RECORD</p><h2 id="record">Analysis</h2><div id="record-meta" class="record-meta"></div></div><div class="stat"><strong id="count">0</strong><span>candidate claims</span></div></div>
+      <div id="methodology" class="methodology"></div><div id="claims" class="claims"></div>
     </section>
 
     <section class="principles"><p class="eyebrow">THE RULE</p><blockquote>No source is above evidence — including American Idea.</blockquote><p>The goal is not to replace judgment with an algorithm. The goal is to make claims, evidence, uncertainty, corrections, and provenance inspectable.</p></section>
 
     <section class="future-grid">
-      <article><span>01</span><h3>Claim Ledger</h3><p>Every public claim gets an identity, revision history, and evidence trail.</p></article>
-      <article><span>02</span><h3>Compare Coverage</h3><p>See what multiple outlets agree on, emphasize, omit, or dispute.</p></article>
-      <article><span>03</span><h3>Story Timeline</h3><p>Watch a narrative change as evidence, corrections, and amplification appear.</p></article>
+      <article><span>01</span><h3>Claim Ledger</h3><p>Saved stories, claim identities, evidence fingerprints, and revision history persist across sessions.</p></article>
+      <article><span>02</span><h3><a href="./compare.html">Compare Coverage</a></h3><p>Group substantially similar claims across saved records without treating outlet reputation as evidence.</p></article>
+      <article><span>03</span><h3>Story Timeline</h3><p>Track how evidence, corrections, and stored claim status change over time.</p></article>
       <article><span>04</span><h3>Public Provenance</h3><p>Preserve who said what, when, based on which source, with an auditable history.</p></article>
     </section>
   </main>
 
-  <footer><span>American Idea Evidence</span><span>Live preview · Evidence before verdicts.</span></footer>
+  <footer><span>American Idea Evidence</span><span>Evidence before verdicts.</span></footer>
   <script src="./app.js"></script>
 </body>
 </html>
