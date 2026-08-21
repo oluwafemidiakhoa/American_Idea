@@ -58,6 +58,26 @@ class ClaimExtractorTests(unittest.TestCase):
         self.assertTrue(any("6 million views" in c["text"] for c in claims))
         self.assertTrue(all("Getty Images" not in c["text"] for c in claims))
 
+    def test_strips_media_filename_prefix(self):
+        text = (
+            "31677919125902354649540948202559193_00000001.jpg A waterspout came ashore in Nassau County Thursday evening, "
+            "significantly damaging cabanas and buildings, the club said."
+        )
+        claims = extract_candidate_claims(text)
+        self.assertTrue(claims)
+        self.assertTrue(all(".jpg" not in c["text"] for c in claims))
+        self.assertTrue(any(c["text"].startswith("A waterspout") for c in claims))
+
+    def test_strips_social_photo_credit_prefix(self):
+        text = (
+            "Caitlin Harvey/ Facebook Significant damage including flooding and downed trees was reported throughout Dover, "
+            "Delaware, after a likely tornado hit the city, according to the Dover Police Department."
+        )
+        claims = extract_candidate_claims(text)
+        self.assertTrue(claims)
+        self.assertTrue(all("Caitlin Harvey" not in c["text"] for c in claims))
+        self.assertTrue(any(c["text"].startswith("Significant damage") for c in claims))
+
 
 if __name__ == "__main__":
     unittest.main()
