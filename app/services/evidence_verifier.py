@@ -3,6 +3,7 @@ from copy import deepcopy
 from dataclasses import dataclass
 from urllib.parse import urlparse
 
+from .trust_gate import enforce_claim_trust
 from .url_ingestor import IngestionError, IngestedArticle, ingest_article_url
 
 TOKEN_RE = re.compile(r"[a-z0-9][a-z0-9'’-]*", re.I)
@@ -59,7 +60,6 @@ def _overlap(claim_text: str, source_text: str) -> float:
 
 
 def _semantic_negation(text: str) -> bool:
-    """Detect proposition-level negation, excluding temporal 'not ... until' wording."""
     scrubbed = TEMPORAL_NOT_UNTIL_RE.sub(" ", text)
     return bool(NEGATION_RE.search(scrubbed))
 
@@ -115,8 +115,7 @@ def best_passage_match(claim_text: str, article: IngestedArticle) -> PassageMatc
         ranked.append((overlap + min(0.18, shared * 0.06), shared, block.text))
 
     ranked.sort(key=lambda item: (item[0], item[1]), reverse=True)
-    best_text = ranked[0][2]
-    return classify_evidence_passage(claim_text, best_text)
+    return classify_evidence_passage(claim_text, ranked[0][2])
 
 
 def derive_claim_status(claim: dict) -> tuple[str, str]:
@@ -212,14 +211,15 @@ def verify_claim_evidence(
             item["source_sha256"] = fetched.content_sha256
             item["url"] = fetched.final_url
             item["note"] = (
-                "Fetched and fingerprinted by American Idea. Relation is based on conservative lexical, "
-                "numeric, and negation matching; inspect the source passage before relying on the classification."
+                "Fetched and fingerprinted by American Idea. Relation is based on transparent lexical, numeric, "
+                "and negation matching; inspect the source passage before relying on the classification."
             )
             verified_count += 1
 
         status, basis = derive_claim_status(claim)
         claim["status"] = status
         claim["status_basis"] = basis
+        enforce_claim_trust(claim)
 
     fetched_count = sum(1 for value in cache.values() if not isinstance(value, Exception))
     return output, fetched_count, verified_count

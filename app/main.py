@@ -33,9 +33,9 @@ PUBLIC_STORYLENS_URL = "https://oluwafemidiakhoa.github.io/American_Idea/"
 
 app = FastAPI(
     title="American Idea Evidence API",
-    version="1.2.0",
+    version="1.3.0",
     description=(
-        "Evidence-first news analysis with secure URL ingestion, independent evidence discovery, "
+        "Evidence-first news analysis with domain-aware source discovery, an auditable Trust Gate, "
         "bounded autonomous verification, a persistent Claim Ledger, Compare Coverage, and Story Timeline."
     ),
 )
@@ -77,12 +77,22 @@ def health():
     return {
         "status": "ok",
         "service": "american-idea-evidence",
-        "version": "1.2.0",
+        "version": "1.3.0",
         "ledger_configured": ledger_enabled(),
         "story_timeline": True,
         "evidence_discovery": True,
         "autonomous_verification": True,
-        "discovery_providers": ["federal_register", "gdelt"],
+        "trust_gate": True,
+        "source_profiles": [
+            "general",
+            "life_science",
+            "finance_business",
+            "government_policy",
+            "legal_courts",
+            "elections",
+            "science_environment",
+        ],
+        "discovery_providers": ["clinicaltrials_gov", "federal_register", "official_domain", "gdelt"],
     }
 
 
@@ -131,8 +141,7 @@ def refresh_record(record_id: str):
     except Exception as exc:
         raise HTTPException(status_code=503, detail="Story refresh is temporarily unavailable.") from exc
 
-    claims = extract_candidate_claims(article.text)
-    claims = attach_source_link_evidence(claims, article.blocks, article.final_url)
+    claims = attach_source_link_evidence(extract_candidate_claims(article.text), article.blocks, article.final_url)
     changed = previous is None or previous.get("content_sha256") != article.content_sha256
 
     try:
@@ -158,7 +167,7 @@ def refresh_record(record_id: str):
         "timeline": timeline,
         "methodology_note": (
             "Refresh re-fetches the same public URL and compares the extracted article fingerprint with the latest saved snapshot. "
-            "A different fingerprint creates a new immutable record. An unchanged fingerprint records an observation without creating a fake revision."
+            "A different fingerprint creates a new immutable record; an unchanged fingerprint records an observation only."
         ),
     }
 
@@ -253,7 +262,7 @@ def ingest_url(payload: IngestUrlRequest):
         claims_with_evidence=claims_with_evidence,
         methodology_note=(
             "American Idea fetched and fingerprinted the article, extracted candidate claims, attached source-linked leads, "
-            "and persisted an immutable record when the Claim Ledger is configured. Saved claims can then discover and autonomously verify a bounded evidence set."
+            "and persisted an immutable record when configured. Verification uses domain-aware discovery plus a general fallback and Trust Gate."
         ),
     )
 
@@ -267,7 +276,7 @@ def verify_evidence(payload: VerifyEvidenceRequest):
     if ledger_enabled():
         try:
             revision_count = save_verification(
-                article_url=str(payload.article_url), claims=claims, methodology_version="1.2.0"
+                article_url=str(payload.article_url), claims=claims, methodology_version="1.3.0"
             )
             persisted = True
         except Exception as exc:
@@ -282,7 +291,7 @@ def verify_evidence(payload: VerifyEvidenceRequest):
         ledger_persisted=persisted,
         ledger_revision_count=revision_count,
         methodology_note=(
-            "American Idea fetched a bounded number of source-linked or discovered leads, fingerprinted retrieved pages, "
-            "selected relevant passages, and classified their relationship to each claim using conservative thresholds."
+            "American Idea fetched a bounded evidence set, fingerprinted retrieved pages, classified relevant passages, "
+            "and passed every proposed resolved status through an auditable Trust Gate before publication."
         ),
     )
