@@ -6,9 +6,17 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 
-from .models import AnalyzeRequest, AnalysisResponse, IngestUrlRequest, IngestUrlResponse
+from .models import (
+    AnalyzeRequest,
+    AnalysisResponse,
+    IngestUrlRequest,
+    IngestUrlResponse,
+    VerifyEvidenceRequest,
+    VerifyEvidenceResponse,
+)
 from .services.claim_extractor import extract_candidate_claims
 from .services.evidence_engine import attach_source_link_evidence
+from .services.evidence_verifier import verify_claim_evidence
 from .services.url_ingestor import IngestionError, ingest_article_url
 
 BASE_DIR = Path(__file__).resolve().parent
@@ -16,8 +24,11 @@ STATIC_DIR = BASE_DIR / "static"
 
 app = FastAPI(
     title="American Idea Evidence API",
-    version="0.6.0",
-    description="Transparent claim extraction, secure URL ingestion, and source-linked evidence leads.",
+    version="0.7.0",
+    description=(
+        "Transparent claim extraction, secure URL ingestion, source-linked evidence leads, "
+        "and conservative linked-source verification."
+    ),
 )
 
 app.add_middleware(
@@ -42,7 +53,7 @@ def home():
 
 @app.get("/api/health")
 def health():
-    return {"status": "ok", "service": "american-idea-evidence", "version": "0.6.0"}
+    return {"status": "ok", "service": "american-idea-evidence", "version": "0.7.0"}
 
 
 @app.post("/api/analyze", response_model=AnalysisResponse)
@@ -92,6 +103,31 @@ def ingest_url(payload: IngestUrlRequest):
             "American Idea fetched the public HTML page, extracted readable article text, fingerprinted "
             "that text with SHA-256, identified candidate factual claims, and attached source-linked "
             "evidence leads found in the same article passages. These links are provenance leads, not "
-            "independent verification. No claim changes from unresolved merely because the article links to a source."
+            "independent verification. Use Verify evidence to fetch and compare linked sources."
+        ),
+    )
+
+
+@app.post("/api/verify-evidence", response_model=VerifyEvidenceResponse)
+def verify_evidence(payload: VerifyEvidenceRequest):
+    claims_input = [claim.model_dump() for claim in payload.claims]
+    claims, fetched_source_count, verified_evidence_count = verify_claim_evidence(
+        claims_input,
+        max_fetches=payload.max_fetches,
+    )
+
+    return VerifyEvidenceResponse(
+        article_url=str(payload.article_url),
+        claims=claims,
+        factual_claim_count=len(claims),
+        fetched_source_count=fetched_source_count,
+        verified_evidence_count=verified_evidence_count,
+        methodology_note=(
+            "American Idea fetched a limited number of source-linked evidence leads, fingerprinted the "
+            "retrieved pages, selected the most relevant passages, and classified their relationship to "
+            "each claim using conservative lexical, numeric, and negation matching. A fetched link can "
+            "support, contradict, contextualize, or merely mention a claim. Status changes require high "
+            "confidence and, for stronger labels, independent corroboration. This remains an automated "
+            "verification aid, not a substitute for human review of consequential claims."
         ),
     )
