@@ -6,6 +6,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import RedirectResponse
 from fastapi.staticfiles import StaticFiles
 
+from .discovery_routes import router as discovery_router
 from .models import (
     AnalyzeRequest,
     AnalysisResponse,
@@ -36,10 +37,10 @@ PUBLIC_STORYLENS_URL = "https://oluwafemidiakhoa.github.io/American_Idea/"
 
 app = FastAPI(
     title="American Idea Evidence API",
-    version="1.0.0",
+    version="1.1.0",
     description=(
-        "Evidence-first news analysis with secure URL ingestion, linked-source verification, "
-        "a persistent Claim Ledger, Compare Coverage, and immutable Story Timeline snapshots."
+        "Evidence-first news analysis with secure URL ingestion, source-linked and independently discovered evidence leads, "
+        "conservative verification, a persistent Claim Ledger, Compare Coverage, and immutable Story Timeline snapshots."
     ),
 )
 
@@ -56,6 +57,7 @@ app.add_middleware(
 )
 
 app.mount("/static", StaticFiles(directory=STATIC_DIR), name="static")
+app.include_router(discovery_router)
 
 
 @app.on_event("startup")
@@ -78,9 +80,11 @@ def health():
     return {
         "status": "ok",
         "service": "american-idea-evidence",
-        "version": "1.0.0",
+        "version": "1.1.0",
         "ledger_configured": ledger_enabled(),
         "story_timeline": True,
+        "evidence_discovery": True,
+        "discovery_providers": ["federal_register", "gdelt"],
     }
 
 
@@ -258,7 +262,8 @@ def ingest_url(payload: IngestUrlRequest):
         methodology_note=(
             "American Idea fetched the public HTML page, extracted readable article text, fingerprinted it with SHA-256, "
             "identified candidate factual claims, attached source-linked evidence leads, and—when persistence is configured—"
-            "stored the immutable snapshot in the Claim Ledger and Story Timeline."
+            "stored the immutable snapshot in the Claim Ledger and Story Timeline. Saved claims can then use Evidence Discovery "
+            "to find independent public-source leads that remain unverified until separately fetched and compared."
         ),
     )
 
@@ -278,7 +283,7 @@ def verify_evidence(payload: VerifyEvidenceRequest):
             revision_count = save_verification(
                 article_url=str(payload.article_url),
                 claims=claims,
-                methodology_version="1.0.0",
+                methodology_version="1.1.0",
             )
             persisted = True
         except Exception as exc:
@@ -293,7 +298,7 @@ def verify_evidence(payload: VerifyEvidenceRequest):
         ledger_persisted=persisted,
         ledger_revision_count=revision_count,
         methodology_note=(
-            "American Idea fetched a limited number of source-linked evidence leads, fingerprinted the retrieved pages, "
+            "American Idea fetched a limited number of source-linked or discovered evidence leads, fingerprinted the retrieved pages, "
             "selected relevant passages, and classified their relationship to each claim. Status changes remain conservative "
             "and are persisted as revisions when the Claim Ledger is configured."
         ),
