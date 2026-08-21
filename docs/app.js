@@ -176,10 +176,22 @@ function render(data) {
   if (data.article_url) meta.push(`<a href="${escapeAttr(data.article_url)}" target="_blank" rel="noreferrer">Open source article</a>`);
   if (data.content_sha256) meta.push(`SHA-256: <code>${escapeHtml(data.content_sha256.slice(0, 16))}…</code>`);
   if (data.snapshot_status) meta.push(`Snapshot: ${escapeHtml(data.snapshot_status.replaceAll("_", " "))}`);
+  if (Number.isInteger(data.evidence_link_count)) meta.push(`Evidence leads: ${data.evidence_link_count}`);
+  if (Number.isInteger(data.claims_with_evidence)) meta.push(`Claims with leads: ${data.claims_with_evidence}`);
   $("record-meta").innerHTML = meta.join(" · ");
 
   $("claims").innerHTML = data.claims.length
-    ? data.claims.map((c) => `
+    ? data.claims.map((c) => {
+      const evidenceHtml = (c.evidence || []).length
+        ? `<div class="evidence-box"><div class="evidence-heading">Source-linked evidence leads</div>${c.evidence.map((item) => `
+            <a class="evidence-item" href="${escapeAttr(item.url || "#")}" target="_blank" rel="noreferrer">
+              <span class="evidence-kind">${escapeHtml(item.kind)}</span>
+              <strong>${escapeHtml(item.label)}</strong>
+              ${item.note ? `<small>${escapeHtml(item.note)}</small>` : ""}
+            </a>`).join("")}</div>`
+        : `<div class="no-evidence">No source-linked evidence lead was found in the same article passage.</div>`;
+
+      return `
       <article class="claim">
         <div class="claim-top">
           <div>
@@ -189,8 +201,10 @@ function render(data) {
           <span class="status">${escapeHtml(c.status.replaceAll("_", " "))}</span>
         </div>
         ${c.why_flagged.length ? `<ul class="reasons">${c.why_flagged.map((r) => `<li>${escapeHtml(r)}</li>`).join("")}</ul>` : ""}
+        ${evidenceHtml}
         <div class="claim-id">${escapeHtml(c.id)}</div>
-      </article>`).join("")
+      </article>`;
+    }).join("")
     : `<article class="claim"><h3>No strong candidate factual claims detected.</h3><p>This does not mean the article is true or false. It means the current extractor did not identify strong verifiable claim candidates.</p></article>`;
 
   $("results").scrollIntoView({ behavior: "smooth", block: "start" });
