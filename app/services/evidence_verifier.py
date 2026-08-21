@@ -11,6 +11,7 @@ NUMBER_RE = re.compile(
     re.I,
 )
 NEGATION_RE = re.compile(r"\b(?:no|not|never|none|neither|denied|deny|false|incorrect|didn't|did not|hasn't|has not|won't|will not)\b", re.I)
+TEMPORAL_NOT_UNTIL_RE = re.compile(r"\bnot\b.{0,80}\buntil\b", re.I)
 STOPWORDS = {
     "the", "and", "that", "with", "from", "this", "they", "their", "there", "have", "has", "had",
     "was", "were", "are", "for", "but", "not", "into", "about", "after", "before", "during", "while",
@@ -57,13 +58,19 @@ def _overlap(claim_text: str, source_text: str) -> float:
     return len(claim & source) / len(claim)
 
 
+def _semantic_negation(text: str) -> bool:
+    """Detect proposition-level negation while excluding common temporal 'not ... until' phrasing."""
+    scrubbed = TEMPORAL_NOT_UNTIL_RE.sub(" ", text)
+    return bool(NEGATION_RE.search(scrubbed))
+
+
 def classify_evidence_passage(claim_text: str, passage_text: str) -> PassageMatch:
     overlap = _overlap(claim_text, passage_text)
     claim_numbers = _numbers(claim_text)
     source_numbers = _numbers(passage_text)
     shared_numbers = claim_numbers & source_numbers
-    claim_negated = bool(NEGATION_RE.search(claim_text))
-    source_negated = bool(NEGATION_RE.search(passage_text))
+    claim_negated = _semantic_negation(claim_text)
+    source_negated = _semantic_negation(passage_text)
 
     if overlap >= 0.62 and claim_negated != source_negated:
         relation = "contradicts"
@@ -158,7 +165,6 @@ def verify_claim_evidence(
     cache: dict[str, IngestedArticle | Exception] = {}
     fetch_budget = max(0, max_fetches)
 
-    # Prefer primary leads, then secondary. Context links are not used for status changes.
     unique_urls: list[tuple[int, str]] = []
     seen: set[str] = set()
     for claim in output:
